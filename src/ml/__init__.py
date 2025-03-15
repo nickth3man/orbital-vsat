@@ -1,34 +1,84 @@
 """
-Machine learning components for VSAT.
+Machine learning module for VSAT.
 
-This package contains modules for speaker diarization, speaker identification,
-and other ML-related functionality.
+This module provides ML-based functionality for the VSAT application:
+- Speaker diarization
+- Speaker identification
+- Voice print processing
+- Error handling for ML operations
+- Voice activity detection
+- Content analysis
 """
 
-from .diarization import Diarizer
-from .speaker_identification import SpeakerIdentifier
-from .voice_print_processor import VoicePrintProcessor
-from .voice_activity_detection import VoiceActivityDetector
-from .error_handling import (
-    ModelLoadError, 
-    InferenceError, 
-    DiarizationError, 
+# Import diarization components
+from src.ml.diarization import (
+    Diarizer,
+    DiarizationResult,
+    Speaker,
+    Segment,
+    DiarizationConfig
+)
+
+# Import speaker identification components
+from src.ml.speaker_identification import (
+    SpeakerIdentifier,
+    SpeakerMatch
+)
+
+# Import voice print processor
+from src.ml.voice_print_processor import (
+    VoicePrintProcessor
+)
+
+# Import ML error handling
+from src.ml.error_handling import (
+    ModelLoadError,
+    InferenceError,
+    DiarizationError,
     SpeakerIdentificationError,
     ResourceExhaustionError,
     handle_model_load_error,
     handle_inference_error
 )
 
+# Import voice activity detection
+from src.ml.voice_activity_detection import (
+    VoiceActivityDetector,
+    SensitivityPreset
+)
+
+# Import content analysis
+from src.ml.content_analysis import (
+    ContentAnalyzer,
+    TopicModeler,
+    KeywordExtractor,
+    Summarizer,
+    ImportantMomentDetector,
+    ContentAnalysisError
+)
+
 __all__ = [
-    'Diarizer', 
-    'SpeakerIdentifier', 
+    'Diarizer',
+    'DiarizationResult',
+    'Speaker',
+    'Segment',
+    'DiarizationConfig',
+    'SpeakerIdentifier',
+    'SpeakerMatch',
     'VoicePrintProcessor',
-    'VoiceActivityDetector',
     'ModelLoadError',
-    'InferenceError',
+    'InferenceError', 
     'DiarizationError',
     'SpeakerIdentificationError',
     'ResourceExhaustionError',
     'handle_model_load_error',
-    'handle_inference_error'
+    'handle_inference_error',
+    'VoiceActivityDetector',
+    'SensitivityPreset',
+    'ContentAnalyzer',
+    'TopicModeler',
+    'KeywordExtractor',
+    'Summarizer',
+    'ImportantMomentDetector',
+    'ContentAnalysisError'
 ] 

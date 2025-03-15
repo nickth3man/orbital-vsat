@@ -9,12 +9,13 @@ import threading
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import re
+import os
 
 from PyQt6.QtWidgets import (
     QMainWindow, QMessageBox, QFileDialog, 
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QToolBar, QStatusBar, QProgressBar, QLabel, QPushButton,
-    QMenu, QMenuBar, QSlider, QInputDialog
+    QMenu, QMenuBar, QSlider, QInputDialog, QTabWidget, QProgressDialog
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal, pyqtSlot, QTimer
 from PyQt6.QtGui import QAction, QIcon, QColor
@@ -28,6 +29,9 @@ from src.audio.processor import AudioProcessor
 from src.audio.audio_player import AudioPlayer
 from src.utils.error_handler import ErrorHandler, ExportError, FileError, ErrorSeverity
 from src.ui.app import ProcessingWorker
+from src.ui.accessibility_dialog import AccessibilityDialog
+from src.ui.content_analysis_panel import ContentAnalysisPanel
+from src.ui.data_management_dialog import DataManagementDialog
 
 logger = logging.getLogger(__name__)
 
@@ -44,42 +48,67 @@ class MainWindow(QMainWindow):
         self.processing_worker = None
         self.audio_player = AudioPlayer()
         self.settings = QSettings("VSAT", "Voice Separation & Analysis Tool")
+        self.db_manager = None
+        self.transcript_view = None
+        self.waveform_view = None
+        self.search_panel = None
+        self.content_analysis_panel = None
         
         # Create export handlers
         self.export_handlers = ExportHandlers(self)
         
-        self.init_ui()
+        self._init_ui()
         self.restore_geometry()
         
         logger.debug("Main window initialized")
     
-    def init_ui(self):
-        """Initialize the UI."""
+    def _init_ui(self):
+        """Initialize the UI components."""
         # Set window properties
         self.setWindowTitle("Voice Separation & Analysis Tool")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(1200, 800)
         
         # Create central widget and layout
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-        self.main_layout = QVBoxLayout(self.central_widget)
+        central_widget = QWidget()
+        main_layout = QVBoxLayout(central_widget)
         
         # Create splitter for main components
-        self.main_splitter = QSplitter()
-        self.main_splitter.setOrientation(Qt.Orientation.Vertical)
-        self.main_layout.addWidget(self.main_splitter)
+        main_splitter = QSplitter(Qt.Orientation.Vertical)
         
         # Create waveform view
         self.waveform_view = WaveformView()
-        self.main_splitter.addWidget(self.waveform_view)
+        main_splitter.addWidget(self.waveform_view)
+        
+        # Create horizontal splitter for transcript and tools
+        bottom_splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # Create transcript view
         self.transcript_view = TranscriptView()
-        self.main_splitter.addWidget(self.transcript_view)
+        bottom_splitter.addWidget(self.transcript_view)
+        
+        # Create tab widget for tools
+        tools_tab_widget = QTabWidget()
         
         # Create search panel
         self.search_panel = SearchPanel()
-        self.main_layout.addWidget(self.search_panel)
+        tools_tab_widget.addTab(self.search_panel, "Search")
+        
+        # Create content analysis panel
+        self.content_analysis_panel = ContentAnalysisPanel()
+        tools_tab_widget.addTab(self.content_analysis_panel, "Content Analysis")
+        
+        bottom_splitter.addWidget(tools_tab_widget)
+        
+        # Set initial sizes
+        bottom_splitter.setSizes([600, 400])
+        
+        main_splitter.addWidget(bottom_splitter)
+        
+        # Set initial sizes
+        main_splitter.setSizes([300, 500])
+        
+        # Add components to main layout
+        main_layout.addWidget(main_splitter)
         
         # Create status bar
         self.status_bar = QStatusBar()
@@ -106,6 +135,7 @@ class MainWindow(QMainWindow):
         self.search_panel.resultSelected.connect(self.on_search_result_selected)
         self.audio_player.position_changed.connect(self.on_playback_position_changed)
         self.audio_player.playback_state_changed.connect(self.on_playback_state_changed)
+        self.content_analysis_panel.important_moment_selected.connect(self.on_important_moment_selected)
     
     def create_menu_bar(self):
         """Create the menu bar."""
@@ -134,6 +164,12 @@ class MainWindow(QMainWindow):
         
         export_selection_action = export_menu.addAction("Export &Selection...")
         export_selection_action.triggered.connect(self.export_handlers.export_selection)
+        
+        file_menu.addSeparator()
+        
+        # Data management action
+        data_management_action = file_menu.addAction("Data Management...")
+        data_management_action.triggered.connect(self.show_data_management_dialog)
         
         file_menu.addSeparator()
         
@@ -291,6 +327,9 @@ class MainWindow(QMainWindow):
         
         # Update search panel
         self.search_panel.set_segments(self.segments)
+        
+        # Update content analysis panel
+        self.content_analysis_panel.set_segments(self.segments)
         
         # Load audio file in player
         if self.current_file:
@@ -524,17 +563,39 @@ class MainWindow(QMainWindow):
     
     def on_search_result_selected(self, result):
         """Handle selection of a search result."""
-        # Get the word from the result
-        word = result['word']
-        
-        # Update transcript view
-        self.transcript_view.set_current_position(word['start'])
-        
-        # Update waveform position
-        self.waveform_view.set_current_position(word['start'])
-        
-        # Update audio player position
-        self.audio_player.set_position(word['start'])
-        
-        # Update status bar
-        self.status_bar.showMessage(f"Search result: {word['text']} ({word['start']:.2f}s)") 
+        if result and 'start' in result:
+            # Set playback position
+            if self.audio_player:
+                self.audio_player.set_position(result['start'])
+            
+            # Highlight in transcript view
+            if self.transcript_view:
+                self.transcript_view.scroll_to_position(result['start'])
+            
+            # Highlight in waveform view
+            if self.waveform_view:
+                self.waveform_view.set_position(result['start'])
+    
+    def on_important_moment_selected(self, moment):
+        """Handle selection of an important moment."""
+        if moment and 'start' in moment:
+            # Set playback position
+            if self.audio_player:
+                self.audio_player.set_position(moment['start'])
+            
+            # Highlight in transcript view
+            if self.transcript_view:
+                self.transcript_view.scroll_to_position(moment['start'])
+            
+            # Highlight in waveform view
+            if self.waveform_view:
+                self.waveform_view.set_position(moment['start'])
+            
+            # Play the segment
+            if self.audio_player and 'end' in moment:
+                self.audio_player.play_segment(moment['start'], moment['end'])
+    
+    def show_data_management_dialog(self):
+        """Show the data management dialog."""
+        dialog = DataManagementDialog(self.db_manager, self)
+        dialog.exec() 
