@@ -11,13 +11,22 @@ import datetime
 import json
 from typing import Dict, Any
 import time
+from unittest.mock import patch
+import sys
+import os
+
+# Add the parent directory to sys.path to allow imports from src
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 # Adjust imports to work with the project structure
 from src.database.models import Base, Speaker, Recording, TranscriptSegment, TranscriptWord
 from src.database.db_manager import DatabaseManager
+from src.utils.error_handler import DatabaseError, ErrorSeverity
+from src.database.data_manager import DataManager, DataManagerError
 
 
 class TestDatabaseModels(unittest.TestCase):
@@ -632,6 +641,51 @@ class TestDatabaseManager(unittest.TestCase):
         # Test with non-existent speaker
         empty_stats = self.db_manager.get_speaker_statistics(self.session, 9999)
         self.assertEqual(empty_stats, {})
+
+
+class TestDatabaseErrorHandling(unittest.TestCase):
+    """Test case for database error handling."""
+    
+    def setUp(self):
+        """Set up the test environment."""
+        print("\nRunning database error handling tests...")
+        # Use in-memory database for testing
+        self.db_manager = DatabaseManager(":memory:")
+        self.data_manager = DataManager(self.db_manager)
+        self.session = self.db_manager.get_session()
+    
+    def tearDown(self):
+        """Clean up after tests."""
+        self.db_manager.close_session(self.session)
+        print("Database error handling tests completed")
+    
+    @patch('sqlalchemy.orm.query.Query.first')
+    def test_get_database_statistics_error(self, mock_first):
+        """Test error handling when getting database statistics fails."""
+        print("Testing database statistics error handling...")
+        # Make the query.first() method raise an exception
+        mock_first.side_effect = Exception("Test error")
+        
+        # Attempt to get database statistics
+        with self.assertRaises(DataManagerError) as context:
+            self.data_manager.get_database_statistics(self.session)
+        
+        # Verify the exception details
+        self.assertEqual(str(context.exception), "Failed to retrieve database statistics: Test error")
+        self.assertEqual(context.exception.details["error"], "Test error")
+        print("Database statistics error test passed!")
+    
+    def test_create_backup_in_memory_error(self):
+        """Test error handling when trying to backup an in-memory database."""
+        print("Testing in-memory database backup error handling...")
+        # The setup uses an in-memory database, so backup should fail
+        with self.assertRaises(DataManagerError) as context:
+            self.data_manager.create_backup()
+        
+        # Verify the exception details
+        self.assertEqual(str(context.exception), "Unexpected error during database backup: Cannot backup in-memory database")
+        self.assertEqual(context.exception.details["source"], ":memory:")
+        print("In-memory backup error test passed!")
 
 
 if __name__ == "__main__":

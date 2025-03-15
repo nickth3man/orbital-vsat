@@ -49,208 +49,302 @@ class DataManager:
             session: Database session
             
         Returns:
-            Dict[str, Any]: Statistics about the database
+            Dict[str, Any]: Database statistics
+            
+        Raises:
+            DataManagerError: If statistics cannot be retrieved
         """
         try:
-            # Get record counts
-            recording_count = session.query(func.count(Recording.id)).scalar() or 0
+            # Get recording count and total duration
+            recording_stats = session.query(
+                func.count(Recording.id).label('count'),
+                func.sum(Recording.duration).label('total_duration')
+            ).first()
+            
+            recording_count = recording_stats[0] or 0
+            total_duration = recording_stats[1] or 0
+            
+            # Get speaker count
             speaker_count = session.query(func.count(Speaker.id)).scalar() or 0
+            
+            # Get segment count
             segment_count = session.query(func.count(TranscriptSegment.id)).scalar() or 0
+            
+            # Get word count
             word_count = session.query(func.count(TranscriptWord.id)).scalar() or 0
             
-            # Get total audio duration
-            total_duration = session.query(func.sum(Recording.duration)).scalar() or 0
-            
             # Get database file size
-            db_path = self.engine.url.database
-            db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+            db_path = self.db_manager.engine.url.database
+            if db_path != ':memory:':
+                db_size = os.path.getsize(db_path)
+            else:
+                db_size = 0  # Memory database
             
-            # Get table sizes
-            inspector = inspect(self.engine)
-            table_stats = {}
-            
-            with self.engine.connect() as conn:
-                for table_name in inspector.get_table_names():
-                    # Get row count
-                    row_count = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar() or 0
+            # Get table sizes if possible
+            table_sizes = {}
+            if db_path != ':memory:':
+                try:
+                    # Use sqlite3 directly for table size info since SQLAlchemy doesn't provide this
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                    tables = cursor.fetchall()
                     
-                    # Get table size (SQLite specific)
-                    # This uses SQLite page count and page size to estimate table size
-                    page_count = conn.execute(text(f"PRAGMA page_count")).scalar() or 0
-                    page_size = conn.execute(text(f"PRAGMA page_size")).scalar() or 0
-                    table_size = (page_count * page_size) / len(inspector.get_table_names())  # Rough estimate
+                    for table in tables:
+                        table_name = table[0]
+                        cursor.execute(f"SELECT count(*) FROM {table_name}")
+                        row_count = cursor.fetchone()[0]
+                        cursor.execute(f"PRAGMA table_info({table_name})")
+                        columns = cursor.fetchall()
+                        
+                        table_sizes[table_name] = {
+                            'row_count': row_count,
+                            'column_count': len(columns)
+                        }
                     
-                    table_stats[table_name] = {
-                        'row_count': row_count,
-                        'size_bytes': int(table_size)
-                    }
+                    conn.close()
+                except sqlite3.Error as e:
+                    logger.warning(f"Failed to get table sizes: {e}")
+                    # Continue without table sizes
             
-            # Collect statistics on speakers
-            speakers_with_voice_prints = session.query(func.count(Speaker.id)) \
-                .filter(Speaker.voice_print.isnot(None)) \
-                .scalar() or 0
+            # Calculate averages
+            avg_duration = total_duration / recording_count if recording_count > 0 else 0
+            avg_segments_per_recording = segment_count / recording_count if recording_count > 0 else 0
+            avg_words_per_segment = word_count / segment_count if segment_count > 0 else 0
             
-            avg_speaking_time = session.query(
-                func.avg(TranscriptSegment.end_time - TranscriptSegment.start_time)
-            ).scalar() or 0
+            # Format human-readable values
+            formatted_total_duration = self._format_duration(total_duration)
+            formatted_avg_duration = self._format_duration(avg_duration)
+            formatted_db_size = self._format_size(db_size)
             
-            # Database health metrics
-            integrity_check = "ok"
-            try:
-                with self.engine.connect() as conn:
-                    integrity_result = conn.execute(text("PRAGMA integrity_check")).scalar()
-                    integrity_check = integrity_result
-            except Exception as e:
-                integrity_check = f"Error: {str(e)}"
-            
-            # Compile all statistics
-            stats = {
-                'timestamp': datetime.datetime.utcnow().isoformat(),
-                'database': {
-                    'path': db_path,
-                    'size_bytes': db_size,
-                    'size_formatted': self._format_size(db_size),
-                    'tables': table_stats,
-                    'integrity_check': integrity_check
-                },
-                'recordings': {
-                    'count': recording_count,
-                    'total_duration': total_duration,
-                    'total_duration_formatted': self._format_duration(total_duration),
-                    'avg_duration': (total_duration / recording_count) if recording_count > 0 else 0
-                },
-                'speakers': {
-                    'count': speaker_count,
-                    'with_voice_prints': speakers_with_voice_prints,
-                    'avg_speaking_time': avg_speaking_time
-                },
-                'transcripts': {
-                    'segment_count': segment_count,
-                    'word_count': word_count,
-                    'avg_words_per_segment': (word_count / segment_count) if segment_count > 0 else 0
-                }
+            # Return statistics dictionary
+            return {
+                'recording_count': recording_count,
+                'speaker_count': speaker_count,
+                'segment_count': segment_count,
+                'word_count': word_count,
+                'total_duration': total_duration,
+                'total_duration_formatted': formatted_total_duration,
+                'avg_duration': avg_duration,
+                'avg_duration_formatted': formatted_avg_duration,
+                'db_size': db_size,
+                'db_size_formatted': formatted_db_size,
+                'avg_segments_per_recording': avg_segments_per_recording,
+                'avg_words_per_segment': avg_words_per_segment,
+                'table_sizes': table_sizes,
+                'generated_at': datetime.datetime.now().isoformat()
             }
-            
-            return stats
-            
         except Exception as e:
-            logger.error(f"Error collecting database statistics: {e}")
-            raise DataManagerError(f"Failed to collect database statistics: {str(e)}")
+            raise DataManagerError(
+                f"Failed to retrieve database statistics: {str(e)}",
+                details={"error": str(e)}
+            )
     
     def create_backup(self, output_path: Optional[str] = None) -> str:
         """Create a backup of the database.
         
         Args:
-            output_path: Optional path for the backup file. If None, uses a default location.
+            output_path: Path to save the backup. If None, a default path is used.
             
         Returns:
             str: Path to the created backup file
+            
+        Raises:
+            DataManagerError: If backup creation fails
         """
         try:
-            # Determine backup path
+            # Get database path
+            db_path = self.db_manager.engine.url.database
+            if db_path == ':memory:':
+                raise DataManagerError(
+                    "Cannot backup in-memory database", 
+                    details={"db_path": db_path}
+                )
+            
+            # Generate default backup path if not provided
             if output_path is None:
-                db_dir = Path.home() / '.vsat' / 'backups'
-                db_dir.mkdir(exist_ok=True, parents=True)
+                backup_dir = Path.home() / '.vsat' / 'backups'
+                os.makedirs(backup_dir, exist_ok=True)
+                
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_path = str(db_dir / f"vsat_backup_{timestamp}.zip")
+                output_path = str(backup_dir / f"vsat_backup_{timestamp}.db")
             
-            # Create a temporary directory for backup files
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Get the database file path
-                db_path = self.engine.url.database
-                
-                if not os.path.exists(db_path):
-                    raise DataManagerError(f"Database file not found at {db_path}")
-                
-                # Create a copy of the database file to avoid locking issues
-                db_copy_path = os.path.join(temp_dir, "vsat.db")
-                
-                # Use the SQLite backup API for a consistent backup
-                with sqlite3.connect(db_path) as src_conn:
-                    with sqlite3.connect(db_copy_path) as dst_conn:
-                        src_conn.backup(dst_conn)
-                
-                # Create a metadata file with backup information
-                metadata = {
-                    'version': '1.0',
-                    'timestamp': datetime.datetime.utcnow().isoformat(),
-                    'database_path': db_path,
-                    'tables': [table for table in inspect(self.engine).get_table_names()]
-                }
-                
-                metadata_path = os.path.join(temp_dir, "backup_metadata.json")
-                with open(metadata_path, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                
-                # Create the ZIP archive containing the database copy and metadata
-                with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
-                    backup_zip.write(db_copy_path, arcname="vsat.db")
-                    backup_zip.write(metadata_path, arcname="backup_metadata.json")
+            logger.info(f"Creating database backup at {output_path}")
             
-            logger.info(f"Created database backup at {output_path}")
-            return output_path
+            # Create a new connection to the database
+            source_conn = sqlite3.connect(db_path)
             
+            # Make sure we don't interfere with any transactions
+            source_conn.execute("BEGIN IMMEDIATE")
+            
+            try:
+                # Create a backup using SQLite's built-in backup functionality
+                backup_conn = sqlite3.connect(output_path)
+                source_conn.backup(backup_conn)
+                backup_conn.close()
+                
+                logger.info(f"Database backup created successfully: {output_path}")
+                return output_path
+            finally:
+                source_conn.execute("ROLLBACK")
+                source_conn.close()
+                
+        except sqlite3.Error as e:
+            raise DataManagerError(
+                f"Database backup failed: {str(e)}", 
+                details={"source": db_path, "destination": output_path, "error": str(e)}
+            ) from e
+        except OSError as e:
+            raise DataManagerError(
+                f"File system error during backup: {str(e)}", 
+                details={"source": db_path, "destination": output_path, "error": str(e)}
+            ) from e
         except Exception as e:
-            logger.error(f"Error creating database backup: {e}")
-            raise DataManagerError(f"Failed to create database backup: {str(e)}")
+            raise DataManagerError(
+                f"Unexpected error during database backup: {str(e)}", 
+                details={"source": db_path, "destination": output_path}
+            ) from e
     
     def restore_backup(self, backup_path: str) -> bool:
-        """Restore the database from a backup file.
+        """Restore a database from a backup file.
         
         Args:
             backup_path: Path to the backup file
             
         Returns:
-            bool: True if the restore was successful
+            bool: True if restore succeeded
+            
+        Raises:
+            DataManagerError: If backup restoration fails
         """
         try:
+            # Validate backup file
             if not os.path.exists(backup_path):
-                raise DataManagerError(f"Backup file not found at {backup_path}")
+                raise DataManagerError(
+                    f"Backup file not found: {backup_path}",
+                    details={"backup_path": backup_path}
+                )
             
-            # Create a temporary directory for extracting backup files
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Extract the backup archive
-                with zipfile.ZipFile(backup_path, 'r') as backup_zip:
-                    backup_zip.extractall(temp_dir)
+            # Get database path
+            db_path = self.db_manager.engine.url.database
+            if db_path == ':memory:':
+                raise DataManagerError(
+                    "Cannot restore to in-memory database",
+                    details={"db_path": db_path}
+                )
+            
+            logger.info(f"Restoring database from backup: {backup_path}")
+            
+            # Create a backup of the current database before restoring
+            # This gives us a way to roll back if things go wrong
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_dir = Path(db_path).parent / "restore_backups"
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            safety_backup = str(backup_dir / f"pre_restore_{timestamp}.db")
+            
+            logger.info(f"Creating safety backup before restore: {safety_backup}")
+            
+            # Test if we can read from the backup file
+            try:
+                # Open and validate backup file
+                backup_conn = sqlite3.connect(backup_path)
                 
-                # Verify backup metadata
-                metadata_path = os.path.join(temp_dir, "backup_metadata.json")
-                if not os.path.exists(metadata_path):
-                    raise DataManagerError("Invalid backup: missing metadata file")
+                # Verify that it's a valid SQLite database
+                cursor = backup_conn.cursor()
+                cursor.execute("PRAGMA integrity_check")
+                integrity = cursor.fetchone()[0]
                 
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
+                if integrity != "ok":
+                    backup_conn.close()
+                    raise DataManagerError(
+                        f"Backup integrity check failed: {integrity}", 
+                        details={"backup_path": backup_path, "integrity_result": integrity}
+                    )
                 
-                # Verify database file
-                db_backup_path = os.path.join(temp_dir, "vsat.db")
-                if not os.path.exists(db_backup_path):
-                    raise DataManagerError("Invalid backup: missing database file")
+                # Check that it contains expected tables
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = {row[0] for row in cursor.fetchall()}
                 
-                # Get the current database file path
-                db_path = self.engine.url.database
+                expected_tables = {"recording", "speaker", "transcript_segment", "transcript_word"}
+                missing_tables = expected_tables - {t.lower() for t in tables}
                 
-                # Create a backup of the existing database before restoring
+                if missing_tables:
+                    backup_conn.close()
+                    raise DataManagerError(
+                        f"Backup is missing expected tables: {', '.join(missing_tables)}",
+                        details={"backup_path": backup_path, "missing_tables": list(missing_tables)}
+                    )
+                
+                backup_conn.close()
+            except sqlite3.Error as e:
+                raise DataManagerError(
+                    f"Invalid or corrupt backup file: {str(e)}",
+                    details={"backup_path": backup_path, "error": str(e)}
+                ) from e
+            
+            # Close all connections to the database
+            self.db_manager.Session.remove()
+            self.db_manager.engine.dispose()
+            
+            # Create safety backup
+            try:
+                with sqlite3.connect(db_path) as source_conn:
+                    with sqlite3.connect(safety_backup) as dest_conn:
+                        source_conn.backup(dest_conn)
+            except sqlite3.Error as e:
+                raise DataManagerError(
+                    f"Failed to create safety backup before restore: {str(e)}",
+                    details={"db_path": db_path, "safety_backup": safety_backup, "error": str(e)}
+                ) from e
+            
+            # Now restore from the backup file
+            try:
+                # If the database file exists, remove it first
                 if os.path.exists(db_path):
-                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                    db_backup = f"{db_path}.bak.{timestamp}"
-                    shutil.copy2(db_path, db_backup)
-                    logger.info(f"Created backup of existing database at {db_backup}")
+                    os.remove(db_path)
                 
-                # Close all database connections
-                self.db_manager.Session.remove()
+                # Copy the backup to the database location
+                with sqlite3.connect(backup_path) as source_conn:
+                    with sqlite3.connect(db_path) as dest_conn:
+                        source_conn.backup(dest_conn)
                 
-                # Replace the database file with the backup
-                try:
-                    shutil.copy2(db_backup_path, db_path)
-                except Exception as e:
-                    raise DataManagerError(f"Failed to restore database: {str(e)}")
-                
-                logger.info(f"Restored database from backup {backup_path}")
+                logger.info(f"Database successfully restored from backup: {backup_path}")
                 return True
+            except (sqlite3.Error, OSError) as e:
+                # Attempt to restore from the safety backup if the restore failed
+                logger.error(f"Restore failed, attempting to recover from safety backup: {e}")
                 
+                try:
+                    if os.path.exists(db_path):
+                        os.remove(db_path)
+                    
+                    with sqlite3.connect(safety_backup) as source_conn:
+                        with sqlite3.connect(db_path) as dest_conn:
+                            source_conn.backup(dest_conn)
+                    
+                    logger.info("Successfully recovered from safety backup")
+                except Exception as recovery_error:
+                    logger.critical(f"Failed to recover from safety backup: {recovery_error}")
+                
+                raise DataManagerError(
+                    f"Failed to restore database: {str(e)}",
+                    details={
+                        "backup_path": backup_path, 
+                        "db_path": db_path, 
+                        "safety_backup": safety_backup,
+                        "error": str(e)
+                    }
+                ) from e
+                
+        except DataManagerError:
+            # Re-raise existing DataManagerError exceptions
+            raise
         except Exception as e:
-            logger.error(f"Error restoring database from backup: {e}")
-            raise DataManagerError(f"Failed to restore database: {str(e)}")
+            raise DataManagerError(
+                f"Unexpected error during database restore: {str(e)}",
+                details={"backup_path": backup_path}
+            ) from e
     
     def archive_recording(self, session: Session, recording_id: int, archive_dir: Optional[str] = None) -> str:
         """Archive a recording and all its associated data.

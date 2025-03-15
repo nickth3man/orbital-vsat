@@ -401,5 +401,81 @@ class TestDataManager(unittest.TestCase):
         self.assertEqual(self.data_manager._format_duration(3600), "1h 0m 0s")
         self.assertEqual(self.data_manager._format_duration(3661), "1h 1m 1s")
 
+class TestDataManagerErrorHandling(unittest.TestCase):
+    """Test case for data manager error handling."""
+    
+    def setUp(self):
+        """Set up the test environment."""
+        # Use in-memory database for testing
+        self.db_manager = DatabaseManager(":memory:")
+        self.data_manager = DataManager(self.db_manager)
+        self.session = self.db_manager.get_session()
+    
+    def tearDown(self):
+        """Clean up after tests."""
+        self.db_manager.close_session(self.session)
+    
+    @patch('sqlalchemy.orm.query.Query.first')
+    def test_get_database_statistics_error(self, mock_first):
+        """Test error handling when getting database statistics fails."""
+        # Make the query.first() method raise an exception
+        mock_first.side_effect = Exception("Test error")
+        
+        # Attempt to get database statistics
+        with self.assertRaises(DataManagerError) as context:
+            self.data_manager.get_database_statistics(self.session)
+        
+        # Verify the exception details
+        self.assertEqual(str(context.exception), "Failed to retrieve database statistics: Test error")
+        self.assertEqual(context.exception.details["error"], "Test error")
+    
+    def test_create_backup_in_memory_error(self):
+        """Test error handling when trying to backup an in-memory database."""
+        # The setup uses an in-memory database, so backup should fail
+        with self.assertRaises(DataManagerError) as context:
+            self.data_manager.create_backup()
+        
+        # Verify the exception details
+        self.assertEqual(str(context.exception), "Cannot backup in-memory database")
+        self.assertEqual(context.exception.details["db_path"], ":memory:")
+    
+    @patch('sqlite3.connect')
+    def test_create_backup_sqlite_error(self, mock_connect):
+        """Test error handling when SQLite operations fail during backup."""
+        # Mock the database path to be a real path instead of :memory:
+        with patch.object(self.db_manager.engine.url, 'database', 'test.db'):
+            # Make sqlite3.connect raise an exception
+            mock_connect.side_effect = sqlite3.Error("Database is locked")
+            
+            # Attempt to create a backup
+            with self.assertRaises(DataManagerError) as context:
+                self.data_manager.create_backup("test_backup.db")
+            
+            # Verify the exception details
+            self.assertEqual(str(context.exception), "Database backup failed: Database is locked")
+            self.assertEqual(context.exception.details["error"], "Database is locked")
+    
+    def test_restore_backup_file_not_found(self):
+        """Test error handling when backup file doesn't exist."""
+        # Attempt to restore from a non-existent file
+        with self.assertRaises(DataManagerError) as context:
+            self.data_manager.restore_backup("nonexistent_backup.db")
+        
+        # Verify the exception details
+        self.assertEqual(str(context.exception), "Backup file not found: nonexistent_backup.db")
+        self.assertEqual(context.exception.details["backup_path"], "nonexistent_backup.db")
+    
+    def test_restore_backup_in_memory_error(self):
+        """Test error handling when trying to restore to an in-memory database."""
+        # Create a temporary file to use as a fake backup
+        with tempfile.NamedTemporaryFile(suffix='.db') as temp_file:
+            # Attempt to restore to an in-memory database
+            with self.assertRaises(DataManagerError) as context:
+                self.data_manager.restore_backup(temp_file.name)
+            
+            # Verify the exception details
+            self.assertEqual(str(context.exception), "Cannot restore to in-memory database")
+            self.assertEqual(context.exception.details["db_path"], ":memory:")
+
 if __name__ == '__main__':
     unittest.main() 
