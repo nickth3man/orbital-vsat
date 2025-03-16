@@ -24,6 +24,7 @@ from src.ui.waveform_view import WaveformView
 from src.ui.transcript_view import TranscriptView
 from src.ui.search_panel import SearchPanel
 from src.ui.export_handlers import ExportHandlers
+from src.ui.batch_processing_dialog import BatchProcessingDialog
 from src.audio.file_handler import AudioFileHandler
 from src.audio.processor import AudioProcessor
 from src.audio.audio_player import AudioPlayer
@@ -32,6 +33,7 @@ from src.ui.app import ProcessingWorker
 from src.ui.accessibility_dialog import AccessibilityDialog
 from src.ui.content_analysis_panel import ContentAnalysisPanel
 from src.ui.data_management_dialog import DataManagementDialog
+from src.database.data_manager import DataManager
 
 logger = logging.getLogger(__name__)
 
@@ -48,19 +50,48 @@ class MainWindow(QMainWindow):
         self.processing_worker = None
         self.audio_player = AudioPlayer()
         self.settings = QSettings("VSAT", "Voice Separation & Analysis Tool")
-        self.db_manager = None
-        self.transcript_view = None
-        self.waveform_view = None
-        self.search_panel = None
-        self.content_analysis_panel = None
         
-        # Create export handlers
-        self.export_handlers = ExportHandlers(self)
+        # Initialize data manager
+        self.data_manager = None
+        self._init_data_manager()
         
+        # Initialize UI
         self._init_ui()
+        
+        # Restore window geometry
         self.restore_geometry()
         
-        logger.debug("Main window initialized")
+        # Initialize audio processor
+        self.audio_processor = AudioProcessor()
+        
+        # Initialize export handlers
+        self.export_handlers = ExportHandlers(self)
+        
+        logger.info("Main window initialized")
+    
+    def _init_data_manager(self):
+        """Initialize the data manager."""
+        try:
+            from src.database.db_manager import DatabaseManager
+            
+            # Get database path from settings or use default
+            db_path = self.settings.value("database/path", str(Path.home() / ".vsat" / "vsat.db"))
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            
+            # Initialize database manager
+            db_manager = DatabaseManager(db_path)
+            db_manager.initialize_database()
+            
+            # Initialize data manager
+            self.data_manager = DataManager(db_manager)
+            
+            logger.info(f"Data manager initialized with database at {db_path}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize data manager: {str(e)}")
+            self.data_manager = None
     
     def _init_ui(self):
         """Initialize the UI components."""
@@ -144,54 +175,65 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = menu_bar.addMenu("&File")
         
-        open_action = file_menu.addAction("&Open...")
-        open_action.triggered.connect(self.open_file)
+        open_action = QAction("&Open...", self)
         open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(lambda: self.open_file())
+        file_menu.addAction(open_action)
+        
+        # Add batch processing action
+        batch_action = QAction("&Batch Processing...", self)
+        batch_action.setShortcut("Ctrl+B")
+        batch_action.triggered.connect(self.show_batch_processing_dialog)
+        file_menu.addAction(batch_action)
         
         file_menu.addSeparator()
         
-        # Export submenu
-        export_menu = file_menu.addMenu("&Export")
-        
-        export_transcript_action = export_menu.addAction("Export &Transcript...")
-        export_transcript_action.triggered.connect(self.export_handlers.export_transcript)
-        
-        export_audio_action = export_menu.addAction("Export &Audio Segment...")
-        export_audio_action.triggered.connect(self.export_handlers.export_audio_segment)
-        
-        export_speaker_action = export_menu.addAction("Export &Speaker Audio...")
-        export_speaker_action.triggered.connect(self.export_handlers.export_speaker_audio)
-        
-        export_selection_action = export_menu.addAction("Export &Selection...")
-        export_selection_action.triggered.connect(self.export_handlers.export_selection)
-        
-        file_menu.addSeparator()
-        
-        # Data management action
-        data_management_action = file_menu.addAction("Data Management...")
-        data_management_action.triggered.connect(self.show_data_management_dialog)
-        
-        file_menu.addSeparator()
-        
-        exit_action = file_menu.addAction("E&xit")
-        exit_action.triggered.connect(self.close)
+        exit_action = QAction("E&xit", self)
         exit_action.setShortcut("Alt+F4")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
         
         # Playback menu
         playback_menu = menu_bar.addMenu("&Playback")
         
-        play_pause_action = playback_menu.addAction("&Play/Pause")
-        play_pause_action.triggered.connect(self.toggle_playback)
+        play_pause_action = QAction("Play/Pause", self)
         play_pause_action.setShortcut("Space")
+        play_pause_action.triggered.connect(self.toggle_playback)
+        playback_menu.addAction(play_pause_action)
         
-        stop_action = playback_menu.addAction("&Stop")
+        stop_action = QAction("Stop", self)
+        stop_action.setShortcut("Ctrl+.")
         stop_action.triggered.connect(self.stop_playback)
+        playback_menu.addAction(stop_action)
+        
+        # Export menu
+        export_menu = menu_bar.addMenu("&Export")
+        
+        export_transcript_action = QAction("Export &Transcript...", self)
+        export_transcript_action.triggered.connect(self.export_handlers.export_transcript)
+        export_menu.addAction(export_transcript_action)
+        
+        export_audio_action = QAction("Export &Audio...", self)
+        export_audio_action.triggered.connect(self.export_handlers.export_audio)
+        export_menu.addAction(export_audio_action)
+        
+        # Tools menu
+        tools_menu = menu_bar.addMenu("&Tools")
+        
+        data_management_action = QAction("&Data Management...", self)
+        data_management_action.triggered.connect(self.show_data_management_dialog)
+        tools_menu.addAction(data_management_action)
+        
+        accessibility_action = QAction("&Accessibility Settings...", self)
+        accessibility_action.triggered.connect(self.show_accessibility_dialog)
+        tools_menu.addAction(accessibility_action)
         
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
         
-        about_action = help_menu.addAction("&About")
+        about_action = QAction("&About", self)
         about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
     
     def create_toolbar(self):
         """Create the toolbar."""
@@ -597,5 +639,31 @@ class MainWindow(QMainWindow):
     
     def show_data_management_dialog(self):
         """Show the data management dialog."""
-        dialog = DataManagementDialog(self.db_manager, self)
+        dialog = DataManagementDialog(self.data_manager, self)
+        dialog.exec()
+    
+    def show_batch_processing_dialog(self):
+        """Show the batch processing dialog."""
+        # Create and show the batch processing dialog
+        dialog = BatchProcessingDialog(
+            parent=self,
+            data_manager=self.data_manager,
+            initial_files=[self.current_file] if self.current_file else []
+        )
+        
+        # Show the dialog
+        dialog.exec()
+        
+        # Refresh data management if needed
+        if self.data_manager and dialog.batch_processor:
+            # Check if any files were processed successfully
+            status = dialog.batch_processor.get_task_status()
+            if status["completed"]:
+                # Refresh data management dialog if it's open
+                if hasattr(self, "data_management_dialog") and self.data_management_dialog.isVisible():
+                    self.data_management_dialog.refresh_data()
+    
+    def show_accessibility_dialog(self):
+        """Show the accessibility settings dialog."""
+        dialog = AccessibilityDialog(self)
         dialog.exec() 

@@ -1,0 +1,140 @@
+[
+  {
+    "id": "basic_workflow",
+    "name": "Basic Audio Processing Workflow",
+    "description": "Test the basic workflow of loading an audio file, processing it, and viewing the results.",
+    "steps": [
+      "Open an audio file",
+      "Process the audio with default settings",
+      "View the waveform and transcript",
+      "Play the audio and verify synchronization",
+      "Search for a word in the transcript",
+      "Export the transcript"
+    ],
+    "expected_results": "Audio file is processed correctly, waveform and transcript are displayed, playback is synchronized, search works, and transcript can be exported.",
+    "metrics": ["time_to_complete", "errors_encountered", "user_satisfaction"]
+  },
+  {
+    "id": "batch_processing",
+    "name": "Batch Processing",
+    "description": "Test the batch processing functionality with multiple audio files.",
+    "steps": [
+      "Open the batch processing dialog",
+      "Add multiple audio files",
+      "Configure processing options",
+      "Start batch processing",
+      "Monitor progress",
+      "View results after completion"
+    ],
+    "expected_results": "Multiple files are processed correctly, progress is displayed, and results are accessible after completion.",
+    "metrics": ["time_to_complete", "errors_encountered", "user_satisfaction", "processing_speed"]
+  },
+  {
+    "id": "speaker_identification",
+    "name": "Speaker Identification",
+    "description": "Test the speaker identification functionality across multiple recordings.",
+    "steps": [
+      "Process multiple recordings with the same speakers",
+      "Verify speaker identification across recordings",
+      "Manually correct speaker labels",
+      "Verify that corrections are applied"
+    ],
+    "expected_results": "Speakers are correctly identified across recordings, manual corrections work, and corrections are applied consistently.",
+    "metrics": ["identification_accuracy", "time_to_correct", "user_satisfaction"]
+  },
+  {
+    "id": "content_analysis",
+    "name": "Content Analysis",
+    "description": "Test the content analysis functionality.",
+    "steps": [
+      "Process an audio file",
+      "Open the content analysis panel",
+      "View topic modeling results",
+      "View keyword extraction results",
+      "View sentiment analysis results"
+    ],
+    "expected_results": "Content analysis results are displayed correctly and provide useful insights.",
+    "metrics": ["analysis_quality", "user_satisfaction"]
+  },
+  {
+    "id": "accessibility",
+    "name": "Accessibility Features",
+    "description": "Test the accessibility features of the application.",
+    "steps": [
+      "Enable high contrast mode",
+      "Test keyboard navigation",
+      "Test screen reader compatibility",
+      "Adjust font sizes"
+    ],
+    "expected_results": "Accessibility features work correctly and improve usability for users with disabilities.",
+    "metrics": ["keyboard_navigation_score", "screen_reader_compatibility", "user_satisfaction"]
+  },
+  {
+    "id": "error_handling",
+    "name": "Error Handling",
+    "description": "Test how the application handles various error conditions.",
+    "steps": [
+      "Try to process a corrupted audio file",
+      "Interrupt processing in the middle",
+      "Process an unsupported file format",
+      "Fill available memory during processing",
+      "Test recovery after application crash"
+    ],
+    "expected_results": "Application handles errors gracefully, provides clear error messages, and recovers from failures without data loss.",
+    "metrics": ["error_clarity", "recovery_effectiveness", "user_satisfaction"]
+  },
+  {
+    "id": "performance_optimization",
+    "name": "Performance Optimization",
+    "description": "Test the performance optimization features of the application.",
+    "steps": [
+      "Enable/disable lazy model loading",
+      "Process a large audio file with different memory settings",
+      "Monitor resource usage during processing",
+      "Test processing with different CPU/GPU configurations",
+      "Compare processing times with different optimization settings"
+    ],
+    "expected_results": "Performance optimization features work correctly and improve processing speed and resource usage.",
+    "metrics": ["processing_speed", "memory_usage", "user_satisfaction"]
+  },
+  {
+    "id": "database_integration",
+    "name": "Database Integration",
+    "description": "Test the database integration features of the application.",
+    "steps": [
+      "Save processed results to database",
+      "Query and retrieve previously processed files",
+      "Update speaker information in the database",
+      "Test database backup and restore",
+      "Verify data integrity after multiple operations"
+    ],
+    "expected_results": "Database integration works correctly, data is stored and retrieved accurately, and operations maintain data integrity.",
+    "metrics": ["data_integrity", "query_speed", "user_satisfaction"]
+  },
+  {
+    "id": "export_import",
+    "name": "Export and Import",
+    "description": "Test the export and import functionality for processed data.",
+    "steps": [
+      "Export processed results in different formats (JSON, CSV, TXT)",
+      "Import previously exported data",
+      "Verify data integrity after export/import cycle",
+      "Test compatibility with external tools"
+    ],
+    "expected_results": "Export and import functionality works correctly, data integrity is maintained, and exported data is compatible with external tools.",
+    "metrics": ["format_compatibility", "data_integrity", "user_satisfaction"]
+  },
+  {
+    "id": "ui_responsiveness",
+    "name": "UI Responsiveness",
+    "description": "Test the responsiveness of the UI during intensive operations.",
+    "steps": [
+      "Interact with UI while processing a large file",
+      "Test responsiveness during batch processing",
+      "Verify UI updates during long-running operations",
+      "Test UI with different window sizes and resolutions"
+    ],
+    "expected_results": "UI remains responsive during intensive operations, provides appropriate feedback, and adapts to different window sizes and resolutions.",
+    "metrics": ["ui_responsiveness", "feedback_quality", "user_satisfaction"]
+  }
+] 

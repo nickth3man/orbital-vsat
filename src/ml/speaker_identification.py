@@ -10,18 +10,33 @@ import logging
 import numpy as np
 import torch
 import pickle
+import traceback
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union
 from sklearn.metrics.pairwise import cosine_similarity
 
 # Import database models
-from src.database.models import Speaker
+from ..database.models import Speaker
 
 # Import audio file handler
-from src.audio.file_handler import AudioFileHandler
-from src.ml.voice_print_processor import VoicePrintProcessor
+from ..audio.file_handler import AudioFileHandler
+from ..ml.voice_print_processor import VoicePrintProcessor
+from ..utils.error_handler import VSATError, ErrorSeverity
+from ..ml.error_handling import SpeakerIdentificationError, ModelLoadError, ResourceExhaustionError
 
 logger = logging.getLogger(__name__)
+
+# Define common speaker identification errors and their recovery strategies
+SPEAKER_ID_ERROR_TYPES = {
+    "model_load": "Failed to load speaker identification model",
+    "embedding_generation": "Failed to generate voice print embedding",
+    "similarity_calculation": "Failed to calculate similarity between voice prints",
+    "speaker_matching": "Failed to find matching speaker",
+    "voice_print_update": "Failed to update speaker voice print",
+    "database_access": "Failed to access speaker database",
+    "audio_quality": "Poor audio quality affecting speaker identification"
+}
 
 class SpeakerIdentifier:
     """Class for speaker identification using ECAPA-TDNN embeddings."""
@@ -30,7 +45,8 @@ class SpeakerIdentifier:
                  auth_token: Optional[str] = None,
                  device: str = "cpu",
                  download_root: Optional[str] = None,
-                 similarity_threshold: float = 0.75):
+                 similarity_threshold: float = 0.75,
+                 timeout: int = 300):
         """Initialize the speaker identifier.
         
         Args:
@@ -38,9 +54,16 @@ class SpeakerIdentifier:
             device: Device to use for inference ("cpu" or "cuda")
             download_root: Directory to download models to
             similarity_threshold: Threshold for speaker similarity (0-1)
+            timeout: Maximum time in seconds to allow for processing
+            
+        Raises:
+            ModelLoadError: If the speaker identification model fails to load
+            ResourceExhaustionError: If system resources are exhausted during initialization
         """
         self.device = device
         self.similarity_threshold = similarity_threshold
+        self.timeout = timeout
+        self.max_retries = 3
         
         # Set default download root if not provided
         if download_root is None:
@@ -50,7 +73,43 @@ class SpeakerIdentifier:
         os.makedirs(download_root, exist_ok=True)
         
         # Initialize voice print processor
-        self.voice_print_processor = VoicePrintProcessor(auth_token, device, download_root)
+        try:
+            self.voice_print_processor = VoicePrintProcessor(auth_token, device, download_root)
+        except Exception as e:
+            error_type = type(e).__name__
+            error_context = {
+                "device": device,
+                "error_type": error_type,
+                "original_error": str(e),
+                "stack_trace": traceback.format_exc()
+            }
+            
+            if "memory" in str(e).lower():
+                raise ResourceExhaustionError(
+                    "Out of memory during speaker identification model initialization",
+                    "memory",
+                    error_context
+                )
+            elif "cuda" in str(e).lower():
+                error_context["suggestion"] = "Use CPU device instead"
+                raise ModelLoadError(
+                    f"CUDA error during speaker identification model initialization: {str(e)}",
+                    "speaker-identification-ecapa-tdnn",
+                    error_context
+                )
+            elif "auth" in str(e).lower() or "token" in str(e).lower():
+                error_context["suggestion"] = "Check your HuggingFace authentication token"
+                raise ModelLoadError(
+                    f"Authentication failed for speaker identification model: {str(e)}",
+                    "speaker-identification-ecapa-tdnn",
+                    error_context
+                )
+            else:
+                raise ModelLoadError(
+                    f"Failed to initialize speaker identification model: {str(e)}",
+                    "speaker-identification-ecapa-tdnn",
+                    error_context
+                )
         
         # Initialize audio file handler
         self.file_handler = AudioFileHandler()
@@ -67,8 +126,67 @@ class SpeakerIdentifier:
             
         Returns:
             np.ndarray: Speaker embedding vector
+            
+        Raises:
+            SpeakerIdentificationError: If voice print generation fails
+            ResourceExhaustionError: If system resources are exhausted
+            ValueError: If the input is invalid
+            FileNotFoundError: If the audio file does not exist
         """
-        return self.voice_print_processor.generate_voice_print(audio, sample_rate)
+        start_time = time.time()
+        
+        try:
+            # Check if processing time exceeds timeout
+            if time.time() - start_time > self.timeout:
+                raise SpeakerIdentificationError(
+                    f"Voice print generation timeout after {self.timeout} seconds",
+                    {"error_type": "processing_timeout", "timeout": self.timeout}
+                )
+            
+            # Validate input audio
+            if isinstance(audio, str):
+                if not os.path.exists(audio):
+                    raise FileNotFoundError(f"Audio file not found: {audio}")
+            elif sample_rate is None:
+                raise ValueError("Sample rate must be provided when audio is not a file path")
+                
+            # Call voice print processor
+            return self.voice_print_processor.generate_voice_print(audio, sample_rate)
+            
+        except torch.cuda.OutOfMemoryError as e:
+            logger.error(f"CUDA out of memory during voice print generation: {str(e)}")
+            raise ResourceExhaustionError(
+                "CUDA out of memory during voice print generation. Try using a CPU device or reducing audio length.",
+                "GPU memory",
+                {"device": self.device, "original_error": str(e), "stack_trace": traceback.format_exc()}
+            )
+            
+        except (FileNotFoundError, ValueError) as e:
+            # Re-raise these as they are input validation errors
+            raise
+            
+        except Exception as e:
+            logger.error(f"Voice print generation failed: {str(e)}")
+            error_type = type(e).__name__
+            error_context = {
+                "error_type": error_type,
+                "original_error": str(e),
+                "stack_trace": traceback.format_exc(),
+                "processing_time": time.time() - start_time
+            }
+            
+            # Add audio info if available
+            if isinstance(audio, np.ndarray) and sample_rate is not None:
+                error_context["audio_shape"] = audio.shape
+                error_context["sample_rate"] = sample_rate
+                error_context["audio_duration"] = len(audio) / sample_rate
+            elif isinstance(audio, str):
+                error_context["audio_file"] = audio
+            
+            raise SpeakerIdentificationError(
+                f"Failed to generate voice print: {str(e)}",
+                {"error_type": "embedding_generation", **error_context}
+            )
     
     def compare_voice_prints(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """Compare two voice print embeddings.
@@ -79,8 +197,39 @@ class SpeakerIdentifier:
             
         Returns:
             float: Similarity score (0-1)
+            
+        Raises:
+            SpeakerIdentificationError: If comparison fails
+            ValueError: If embeddings are invalid
         """
-        return self.voice_print_processor.compare_voice_prints(embedding1, embedding2)
+        try:
+            # Validate embeddings
+            if not isinstance(embedding1, np.ndarray) or not isinstance(embedding2, np.ndarray):
+                raise ValueError("Embeddings must be numpy arrays")
+            
+            if embedding1.shape != embedding2.shape:
+                raise ValueError(f"Embedding shapes do not match: {embedding1.shape} vs {embedding2.shape}")
+            
+            return self.voice_print_processor.compare_voice_prints(embedding1, embedding2)
+            
+        except ValueError as e:
+            # Re-raise value errors as they are input validation errors
+            raise
+            
+        except Exception as e:
+            logger.error(f"Voice print comparison failed: {str(e)}")
+            error_context = {
+                "error_type": type(e).__name__,
+                "original_error": str(e),
+                "stack_trace": traceback.format_exc(),
+                "embedding1_shape": getattr(embedding1, "shape", None),
+                "embedding2_shape": getattr(embedding2, "shape", None)
+            }
+            
+            raise SpeakerIdentificationError(
+                f"Failed to compare voice prints: {str(e)}",
+                {"error_type": "similarity_calculation", **error_context}
+            )
     
     def find_matching_speaker(self, embedding: np.ndarray, 
                              speakers: List[Speaker]) -> Tuple[Optional[Speaker], float]:
@@ -92,43 +241,71 @@ class SpeakerIdentifier:
             
         Returns:
             Tuple[Optional[Speaker], float]: Matching speaker and similarity score, or (None, 0.0)
+            
+        Raises:
+            SpeakerIdentificationError: If matching fails
+            ValueError: If the embedding is invalid
         """
         if not speakers:
             logger.debug("No speakers provided for matching")
             return None, 0.0
         
-        # Extract embeddings from speakers
-        speaker_embeddings = []
-        valid_speakers = []
-        
-        for speaker in speakers:
-            if speaker.voice_print:
-                try:
-                    # Load embedding from voice print
-                    embedding_data = pickle.loads(speaker.voice_print)
-                    speaker_embeddings.append(embedding_data)
-                    valid_speakers.append(speaker)
-                except Exception as e:
-                    logger.error(f"Error loading voice print for speaker {speaker.id}: {e}")
-        
-        if not speaker_embeddings:
-            logger.debug("No valid voice prints found in speakers")
-            return None, 0.0
-        
-        # Compare embedding with all speaker embeddings
-        similarities = [self.compare_voice_prints(embedding, spk_emb) for spk_emb in speaker_embeddings]
-        
-        # Find the best match
-        best_idx = np.argmax(similarities)
-        best_score = similarities[best_idx]
-        
-        # Check if the best match is above the threshold
-        if best_score >= self.similarity_threshold:
-            logger.debug(f"Found matching speaker with score {best_score:.4f}")
-            return valid_speakers[best_idx], best_score
-        else:
-            logger.debug(f"No matching speaker found (best score: {best_score:.4f})")
-            return None, best_score
+        try:
+            # Validate embedding
+            if not isinstance(embedding, np.ndarray):
+                raise ValueError("Embedding must be a numpy array")
+            
+            # Extract embeddings from speakers
+            speaker_embeddings = []
+            valid_speakers = []
+            
+            for speaker in speakers:
+                if hasattr(speaker, 'voice_print') and speaker.voice_print is not None:
+                    try:
+                        # Load voice print from bytes
+                        voice_print = pickle.loads(speaker.voice_print)
+                        speaker_embeddings.append(voice_print)
+                        valid_speakers.append(speaker)
+                    except Exception as e:
+                        logger.warning(f"Could not load voice print for speaker {speaker.id}: {e}")
+            
+            if not speaker_embeddings:
+                logger.debug("No valid voice prints found in speakers list")
+                return None, 0.0
+            
+            # Stack embeddings and compute similarity
+            embedding_matrix = np.vstack(speaker_embeddings)
+            similarities = cosine_similarity([embedding], embedding_matrix)[0]
+            
+            # Find best match
+            best_idx = np.argmax(similarities)
+            best_score = similarities[best_idx]
+            
+            # Check if score exceeds threshold
+            if best_score >= self.similarity_threshold:
+                return valid_speakers[best_idx], best_score
+            else:
+                return None, best_score
+                
+        except ValueError as e:
+            # Re-raise value errors as they are input validation errors
+            raise
+            
+        except Exception as e:
+            logger.error(f"Speaker matching failed: {str(e)}")
+            error_context = {
+                "error_type": type(e).__name__,
+                "original_error": str(e),
+                "stack_trace": traceback.format_exc(),
+                "embedding_shape": getattr(embedding, "shape", None),
+                "num_speakers": len(speakers),
+                "similarity_threshold": self.similarity_threshold
+            }
+            
+            raise SpeakerIdentificationError(
+                f"Failed to find matching speaker: {str(e)}",
+                {"error_type": "speaker_matching", **error_context}
+            )
     
     def update_speaker_voice_print(self, speaker: Speaker, 
                                   new_embedding: np.ndarray, 
@@ -137,15 +314,62 @@ class SpeakerIdentifier:
         
         Args:
             speaker: Speaker to update
-            new_embedding: New embedding to incorporate
-            learning_rate: Weight of the new embedding (0-1)
+            new_embedding: New voice print embedding
+            learning_rate: Weight of new embedding (0-1)
             
         Returns:
-            np.ndarray: Updated speaker embedding
+            np.ndarray: Updated voice print
+            
+        Raises:
+            SpeakerIdentificationError: If update fails
+            ValueError: If inputs are invalid
         """
-        return self.voice_print_processor.update_speaker_voice_print(
-            speaker, new_embedding, learning_rate
-        )
+        try:
+            # Validate inputs
+            if not isinstance(new_embedding, np.ndarray):
+                raise ValueError("New embedding must be a numpy array")
+            
+            if learning_rate < 0 or learning_rate > 1:
+                raise ValueError(f"Learning rate must be between 0 and 1, got {learning_rate}")
+            
+            # Load current voice print
+            if hasattr(speaker, 'voice_print') and speaker.voice_print is not None:
+                current_embedding = pickle.loads(speaker.voice_print)
+            else:
+                logger.info(f"No existing voice print for speaker {speaker.id}, using new embedding")
+                return new_embedding
+            
+            # Validate embedding shapes
+            if current_embedding.shape != new_embedding.shape:
+                raise ValueError(f"Embedding shapes do not match: {current_embedding.shape} vs {new_embedding.shape}")
+            
+            # Update with weighted average
+            updated_embedding = (1 - learning_rate) * current_embedding + learning_rate * new_embedding
+            
+            # Normalize
+            updated_embedding = updated_embedding / np.linalg.norm(updated_embedding)
+            
+            return updated_embedding
+            
+        except ValueError as e:
+            # Re-raise value errors as they are input validation errors
+            raise
+            
+        except Exception as e:
+            logger.error(f"Speaker voice print update failed: {str(e)}")
+            error_context = {
+                "error_type": type(e).__name__,
+                "original_error": str(e),
+                "stack_trace": traceback.format_exc(),
+                "speaker_id": getattr(speaker, "id", None),
+                "new_embedding_shape": getattr(new_embedding, "shape", None),
+                "learning_rate": learning_rate
+            }
+            
+            raise SpeakerIdentificationError(
+                f"Failed to update speaker voice print: {str(e)}",
+                {"error_type": "voice_print_update", **error_context}
+            )
     
     def process_diarization_results(self, audio_path: str, 
                                    diarization_results: Dict[str, Any],
@@ -159,64 +383,141 @@ class SpeakerIdentifier:
             
         Returns:
             Dict[str, Any]: Processed results with identified speakers
+            
+        Raises:
+            SpeakerIdentificationError: If processing fails
+            FileNotFoundError: If the audio file does not exist
         """
-        # Load audio file
-        audio_data, sample_rate, _ = self.file_handler.load_audio(audio_path)
+        start_time = time.time()
         
-        # Process each speaker in the diarization results
-        processed_results = diarization_results.copy()
-        
-        # Track new speakers
-        new_speakers = {}
-        
-        # Process each segment
-        for i, segment in enumerate(processed_results.get('segments', [])):
-            # Get speaker label from diarization
-            speaker_label = segment.get('speaker')
+        try:
+            # Check if file exists
+            if not os.path.exists(audio_path):
+                raise FileNotFoundError(f"Audio file not found: {audio_path}")
             
-            if not speaker_label:
-                continue
-                
-            # Check if we've already processed this speaker
-            if speaker_label in new_speakers:
-                # Use the already identified speaker
-                segment['speaker'] = new_speakers[speaker_label]
-                continue
-                
-            # Extract audio for this segment
-            start_sample = int(segment['start'] * sample_rate)
-            end_sample = int(segment['end'] * sample_rate)
+            # Load audio file
+            audio_data, sample_rate = self.file_handler.load_audio(audio_path)
             
-            # Ensure valid range
-            if start_sample >= end_sample or start_sample >= len(audio_data) or end_sample > len(audio_data):
-                logger.warning(f"Invalid segment range: {segment['start']} - {segment['end']}")
-                continue
-                
-            segment_audio = audio_data[start_sample:end_sample]
+            # Get segments from diarization results
+            segments = diarization_results.get('segments', [])
             
-            # Generate voice print for this segment
-            try:
-                embedding = self.generate_voice_print(segment_audio, sample_rate)
+            if not segments:
+                logger.warning("No segments in diarization results")
+                return diarization_results
+            
+            # Process each segment
+            speaker_map = {}  # Map from diarization speaker ID to identified speaker
+            segment_voice_prints = {}  # Cache voice prints by diarization speaker ID
+            
+            # Deep copy results to avoid modifying original
+            processed_results = {
+                'segments': [],
+                'speakers': diarization_results.get('speakers', []),
+                'identified_speakers': []
+            }
+            
+            # First pass: generate voice prints for each unique speaker
+            for segment in segments:
+                # Check if processing time exceeds timeout
+                if time.time() - start_time > self.timeout:
+                    raise SpeakerIdentificationError(
+                        f"Processing timeout after {self.timeout} seconds",
+                        {"error_type": "processing_timeout", "timeout": self.timeout}
+                    )
+                
+                speaker_id = segment.get('speaker')
+                
+                # Skip if speaker already processed
+                if speaker_id in segment_voice_prints:
+                    continue
+                
+                # Extract audio segment
+                start_time_sec = segment.get('start', 0)
+                end_time_sec = segment.get('end', 0)
+                
+                if end_time_sec <= start_time_sec:
+                    logger.warning(f"Invalid segment time range: {start_time_sec}-{end_time_sec}")
+                    continue
+                
+                # Skip very short segments
+                if end_time_sec - start_time_sec < 1.0:
+                    logger.debug(f"Segment too short for reliable speaker identification: {end_time_sec - start_time_sec}s")
+                    continue
+                
+                try:
+                    # Extract segment audio
+                    segment_audio = self.file_handler.extract_segment(
+                        audio_data, sample_rate, start_time_sec, end_time_sec
+                    )
+                    
+                    # Generate voice print
+                    voice_print = self.generate_voice_print(segment_audio, sample_rate)
+                    
+                    # Add to cache
+                    segment_voice_prints[speaker_id] = voice_print
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to generate voice print for segment: {e}")
+                    continue
+            
+            # Second pass: match speakers with existing speakers
+            for speaker_id, voice_print in segment_voice_prints.items():
+                if time.time() - start_time > self.timeout:
+                    raise SpeakerIdentificationError(
+                        f"Processing timeout after {self.timeout} seconds",
+                        {"error_type": "processing_timeout", "timeout": self.timeout}
+                    )
                 
                 # Find matching speaker
-                matching_speaker, similarity = self.find_matching_speaker(embedding, existing_speakers)
+                matching_speaker, similarity = self.find_matching_speaker(voice_print, existing_speakers)
                 
                 if matching_speaker:
-                    # Use existing speaker
-                    segment['speaker'] = matching_speaker.id
-                    segment['speaker_name'] = matching_speaker.name
-                    segment['speaker_similarity'] = float(similarity)
+                    logger.info(f"Matched speaker {speaker_id} to existing speaker {matching_speaker.id} with similarity {similarity:.3f}")
+                    speaker_map[speaker_id] = matching_speaker
                     
-                    # Update speaker's voice print
-                    self.update_speaker_voice_print(matching_speaker, embedding)
-                    
-                    # Remember this mapping
-                    new_speakers[speaker_label] = matching_speaker.id
-                else:
-                    # Keep the original speaker label
-                    pass
-                    
-            except Exception as e:
-                logger.error(f"Error processing segment {i}: {e}")
-        
-        return processed_results 
+                    # Add to identified speakers if not already present
+                    if matching_speaker.id not in [s.get('id') for s in processed_results['identified_speakers']]:
+                        processed_results['identified_speakers'].append({
+                            'id': matching_speaker.id,
+                            'name': matching_speaker.name,
+                            'similarity': float(similarity)
+                        })
+            
+            # Third pass: update segments with identified speakers
+            for segment in segments:
+                speaker_id = segment.get('speaker')
+                segment_copy = segment.copy()
+                
+                # Add identified speaker if available
+                if speaker_id in speaker_map:
+                    identified_speaker = speaker_map[speaker_id]
+                    segment_copy['identified_speaker'] = {
+                        'id': identified_speaker.id,
+                        'name': identified_speaker.name
+                    }
+                
+                processed_results['segments'].append(segment_copy)
+            
+            return processed_results
+            
+        except (FileNotFoundError, ValueError) as e:
+            # Re-raise these as they are input validation errors
+            raise
+            
+        except Exception as e:
+            logger.error(f"Processing diarization results failed: {str(e)}")
+            error_context = {
+                "error_type": type(e).__name__,
+                "original_error": str(e),
+                "stack_trace": traceback.format_exc(),
+                "audio_path": audio_path,
+                "num_segments": len(diarization_results.get('segments', [])),
+                "num_speakers": len(diarization_results.get('speakers', [])),
+                "num_existing_speakers": len(existing_speakers),
+                "processing_time": time.time() - start_time
+            }
+            
+            raise SpeakerIdentificationError(
+                f"Failed to process diarization results: {str(e)}",
+                error_context
+            ) 

@@ -9,13 +9,13 @@ import logging
 import threading
 import pickle
 import tempfile
-import gc
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union, Callable
 
 import numpy as np
 import torch
 from pydub import AudioSegment
+import gc
 
 from src.audio.file_handler import AudioFileHandler
 from src.audio.audio_preprocessor import AudioPreprocessor
@@ -26,10 +26,11 @@ from src.ml.voice_activity_detection import VoiceActivityDetector
 from src.database.db_manager import DatabaseManager
 from src.database.models import Recording, Speaker, TranscriptSegment, TranscriptWord
 from src.utils.error_handler import ProcessingError, AudioError, FileError, ErrorSeverity
-from src.ml.model_manager import ModelManager, _model_lock
+from src.ml.model_manager import ModelManager
 from src.ml.error_handling import AudioProcessingError, ModelLoadError, ResourceExhaustionError
 from src.audio.chunked_processor import ChunkedProcessor
 from src.config import Config
+from src.ml.model_manager import _model_lock
 
 logger = logging.getLogger(__name__)
 
@@ -1344,13 +1345,12 @@ class AudioProcessor:
             if np.any(limit_samples):
                 source[limit_samples] = np.sign(source[limit_samples]) * (
                     limit_thresh + (np.abs(source[limit_samples]) - limit_thresh) / 3.0
-                )
         except Exception as e:
             logger.warning(f"Error in final limiting: {e}")
             # Simple normalization as fallback
             source = source / (np.max(np.abs(source)) + 1e-8) * 0.9
         
-        return source
+        return source 
 
     def preload_models(self, workflows: Optional[List[str]] = None):
         """Preload models based on anticipated workflows.
