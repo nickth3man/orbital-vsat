@@ -6,8 +6,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.0-orange)](CHANGELOG.md)
-[![Status](https://img.shields.io/badge/status-pre--release-yellow)](CHANGELOG.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 **A comprehensive desktop application for audio recording analysis, speaker separation, transcription, and content analysis.**
 
@@ -27,67 +26,6 @@ By leveraging recent advancements in speaker diarization and speech recognition 
 - Analyze content including sentiment, topics, and important moments
 - Export processed data in multiple formats for further use
 - Provide detailed analytics on speaker patterns and conversation dynamics
-
-### Project Status
-
-VSAT is currently in pre-release status with all core features implemented and tested. The project is in the final stages of completion with the following status:
-
-- ✅ Core Processing Pipeline: Complete
-- ✅ Database Integration: Complete
-- ✅ UI Components: Complete
-- ✅ Advanced Workflows: Complete
-- ✅ Testing Framework: Complete
-- ✅ User Acceptance Testing: Complete
-- ✅ Performance Optimization: Complete
-- ✅ Error Recovery: Complete
-- ✅ ML Model Management: Complete
-- ✅ UI Personalization: Complete
-- ✅ Data Management: Complete
-- ✅ Security Implementation: Complete
-- 🔄 Local Backup System: In Progress
-- 🔄 Final Configuration: In Progress
-- 🔄 Desktop Integration: In Progress
-- 🔄 External Tool Integration: In Progress
-- 🔄 Usage Monitoring: In Progress
-- 🔄 Continuous Improvement Framework: In Progress
-
-Final release (v1.0.0) is scheduled for Late March 2025.
-
-## Final Completion Plan
-
-VSAT is following a structured completion plan focused on optimizing the application for personal use. The plan includes:
-
-1. **Personal User Acceptance Testing** ✅
-   - Comprehensive testing with real-world audio files
-   - Validation of all core features and workflows
-
-2. **Performance Optimization** ✅
-   - Hardware-specific optimizations for desktop use
-   - ML model quantization and efficient resource management
-   - Tiered caching system and background processing
-
-3. **Error Recovery and Resilience** ✅
-   - Automatic checkpointing during long processes
-   - Partial results recovery for interrupted operations
-   - Comprehensive error logging and analysis
-
-4. **ML Model Management** ✅
-   - Model versioning and automatic updates
-   - Performance tracking and specialized models
-   - Fine-tuning for specific audio types
-
-5. **Personalization** ✅
-   - Customized UI layout and keyboard shortcuts
-   - Optimized default settings for common workflows
-   - Personalized color schemes and visual elements
-
-6. **Final Integration Steps** 🔄
-   - Desktop environment integration
-   - External tool compatibility
-   - Backup system implementation
-   - Continuous improvement framework
-
-For detailed implementation guides, see the [project documentation](guide/userguide.md).
 
 ## Key Features
 
@@ -179,9 +117,9 @@ The demo launcher provides a user-friendly interface to select and run any of th
 ### Requirements
 
 - **Python**: 3.11 or higher
-- **Operating System**: Windows 10 or higher (optimized for Windows 11)
+- **Operating System**: Windows 10 or higher
 - **Hardware Recommendations**:
-  - CPU: i7/Ryzen 7 or better (8+ cores recommended)
+  - CPU: i7/Ryzen 7 or better
   - RAM: 32GB (minimum 16GB)
   - GPU: NVIDIA GPU with 8GB+ VRAM (for optimal performance)
   - Storage: SSD with at least 10GB free space for application and models
@@ -199,8 +137,6 @@ VSAT relies on several key libraries:
 - **SQLAlchemy**: For robust database interactions and schema management
 - **NLTK & scikit-learn**: For NLP tasks including sentiment analysis and topic modeling
 - **Matplotlib & Seaborn**: For visualization of audio data and analysis results
-
-All dependencies are listed in `requirements.txt` and will be automatically installed during setup.
 
 ### Setup
 
@@ -227,14 +163,9 @@ All dependencies are listed in `requirements.txt` and will be automatically inst
    python -m src.ml.model_downloader
    ```
 
-5. Run the system check to verify installation and hardware compatibility:
+5. Verify installation:
    ```bash
    python -m src.utils.system_check
-   ```
-
-6. (Optional) Run the performance benchmark to optimize for your hardware:
-   ```bash
-   python -m src.utils.benchmark
    ```
 
 ## Usage
@@ -383,10 +314,6 @@ vsat/
 │   ├── api/              # API documentation
 │   ├── user_guide/       # User guides and tutorials
 │   └── development/      # Development guidelines
-├── guide/                # Final completion guides
-│   ├── 01_personal_user_acceptance_testing.md
-│   ├── 02_analyze_testing_results.md
-│   └── ...               # Additional implementation guides
 ├── models/               # Storage for ML models
 ├── src/                  # Source code
 │   ├── audio/            # Audio processing modules
@@ -427,21 +354,6 @@ vsat/
 └── setup.py              # Package setup
 ```
 
-### Final Completion Guides
-
-The `guide/` directory contains comprehensive implementation guides for completing the project:
-
-- **User Acceptance Testing**: Framework for testing with personal audio files
-- **Performance Optimization**: Techniques for hardware-specific optimization
-- **Error Recovery**: Implementation of robust error handling and recovery
-- **ML Model Management**: System for model versioning and updates
-- **UI Personalization**: Guidelines for customizing the interface
-- **Data Management**: Strategies for organizing and managing processed data
-- **Security**: Implementation of data protection measures
-- **Integration**: Desktop and external tool integration approaches
-
-These guides provide detailed instructions with code examples and best practices for each aspect of the final implementation.
-
 ### Development Workflow
 
 1. **Setup**: Follow the installation instructions above
@@ -474,59 +386,16 @@ These guides provide detailed instructions with code examples and best practices
 
 ## Contributing
 
-VSAT is currently in the final stages of personal optimization and is not actively seeking external contributions at this time. However, the project follows standard best practices for code quality and organization:
+We welcome contributions to VSAT! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
 
-- PEP 8 style guidelines with a line length of 100 characters
-- Descriptive docstrings for all functions and classes following Google style
-- Type hints for function parameters and return values
-- Unit tests for all functionality with >90% coverage
-- Meaningful variable names and comments for complex logic
-- Comprehensive error handling with detailed context information
-- Consistent naming conventions throughout the codebase
-
-After the 1.0.0 release, the project may open for contributions in specific areas. Check back for updates.
-
-## Roadmap to 1.0.0
-
-The following items are currently in progress for the final 1.0.0 release (scheduled for June 15, 2024):
-
-1. **Local Backup System** 🔄
-   - Automatic database backups
-   - File versioning for processed audio
-   - Backup verification and integrity checks
-   - Restore procedures documentation
-
-2. **Final Configuration** 🔄
-   - Optimal default parameters
-   - Startup behavior configuration
-   - Resource usage limits
-   - Logging level configuration
-
-3. **Desktop Integration** 🔄
-   - File associations for audio formats
-   - Desktop shortcuts creation
-   - Environment variable setup
-   - Startup parameter configuration
-
-4. **External Tool Integration** 🔄
-   - Export formats for DAWs and text editors
-   - Hooks for audio editing software
-   - Local API endpoints
-   - Cloud storage service support
-
-5. **Usage Monitoring** 🔄
-   - Performance tracking
-   - Error alerting system
-   - Resource usage monitoring
-   - Processing time analytics
-
-6. **Continuous Improvement Framework** 🔄
-   - Automated benchmarking
-   - Feedback collection system
-   - Versioning strategy
-   - Update mechanism
-
-Progress on these items is tracked in the [CHANGELOG.md](CHANGELOG.md) file.
+- Code of Conduct for respectful and inclusive collaboration
+- Development workflow from fork to pull request
+- Pull request process and review criteria
+- Testing requirements and coverage expectations
+- Documentation standards for code and user documentation
+- Issue reporting process and templates
+- Feature request guidelines
+- Security vulnerability reporting
 
 ## License
 
@@ -544,10 +413,8 @@ VSAT leverages several powerful open-source libraries and research:
 - **Conv-TasNet** - Speech separation model for isolating overlapping voices
 - **PyQt** - GUI framework for the user interface components
 - **SQLAlchemy** - ORM for database operations and management
-- **NLTK & scikit-learn** - NLP tools for content analysis and sentiment detection
+- **NLTK & spaCy** - NLP tools for content analysis and sentiment detection
 - **Matplotlib & Seaborn** - Visualization libraries for data presentation
-
-Special thanks to the research teams behind these technologies for making advanced audio processing accessible.
 
 ## Citations
 
