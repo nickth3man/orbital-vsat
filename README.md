@@ -51,7 +51,7 @@ VSAT is currently in pre-release status with all core features implemented and t
 - 🔄 Usage Monitoring: In Progress
 - 🔄 Continuous Improvement Framework: In Progress
 
-Final release (v1.0.0) is scheduled for June 15, 2024.
+Final release (v1.0.0) is scheduled for Late March 2025.
 
 ## Final Completion Plan
 
