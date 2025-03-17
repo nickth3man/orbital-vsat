@@ -11,10 +11,10 @@ from typing import Dict, Any, Optional, List, Callable
 from PyQt6.QtWidgets import (
     QWidget, QApplication, QMainWindow, QPushButton, QLabel, 
     QSlider, QComboBox, QLineEdit, QCheckBox, QRadioButton,
-    QMessageBox, QMenu, QAction
+    QMessageBox, QMenu
 )
 from PyQt6.QtCore import Qt, QObject, pyqtSignal, QEvent
-from PyQt6.QtGui import QPalette, QColor, QFont, QKeySequence, QShortcut
+from PyQt6.QtGui import QPalette, QColor, QFont, QKeySequence, QShortcut, QAction
 
 logger = logging.getLogger(__name__)
 

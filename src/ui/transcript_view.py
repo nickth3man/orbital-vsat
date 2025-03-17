@@ -8,11 +8,11 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple, Callable
 
 from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QTextCursor, QTextCharFormat
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QTextCursor, QTextCharFormat, QAction
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollBar, 
     QTextEdit, QSplitter, QFrame, QPushButton, QToolBar, QToolButton,
-    QMenu, QAction, QLayout, QSizePolicy, QScrollArea
+    QMenu, QLayout, QSizePolicy, QScrollArea
 )
 
 from src.ui.transcript_segment_widget import TranscriptSegmentWidget

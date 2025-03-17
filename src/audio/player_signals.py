@@ -27,7 +27,7 @@ class PlayerSignalHandler(QObject):
         self.player_obj = player_obj
         logger.debug("Player signal handler initialized")
     
-    @pyqtSlot(int)
+    @pyqtSlot('qint64')
     def on_position_changed(self, position: int):
         """Handle position changed signal from QMediaPlayer.
         
@@ -86,4 +86,4 @@ class PlayerSignalHandler(QObject):
         logger.error(f"Media player error: {error_string} (code: {error})")
         
         # Emit error signal
-        self.player_obj.errorOccurred.emit(f"Audio playback error: {error_string}") 
+        self.player_obj.errorOccurred.emit(f"Audio playback error: {error_string}")

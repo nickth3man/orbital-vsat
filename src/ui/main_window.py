@@ -29,7 +29,7 @@ from src.audio.file_handler import AudioFileHandler
 from src.audio.processor import AudioProcessor
 from src.audio.audio_player import AudioPlayer
 from src.utils.error_handler import ErrorHandler, ExportError, FileError, ErrorSeverity
-from src.ui.app import ProcessingWorker
+from src.ui.processing_worker import ProcessingWorker
 from src.ui.accessibility_dialog import AccessibilityDialog
 from src.ui.content_analysis_panel import ContentAnalysisPanel
 from src.ui.data_management_dialog import DataManagementDialog
@@ -55,25 +55,28 @@ class MainWindow(QMainWindow):
         self.data_manager = None
         self._init_data_manager()
         
+        # Initialize export handlers
+        self.export_handlers = ExportHandlers(self)
+        
         # Initialize UI
         self._init_ui()
         
         # Restore window geometry
         self.restore_geometry()
         
-        # Initialize audio processor
-        self.audio_processor = AudioProcessor()
-        
-        # Initialize export handlers
-        self.export_handlers = ExportHandlers(self)
+        # Initialize audio processor with db_manager if available
+        if self.data_manager is not None and hasattr(self.data_manager, 'db_manager'):
+            self.audio_processor = AudioProcessor(db_manager=self.data_manager.db_manager)
+            logger.info("Audio processor initialized successfully")
+        else:
+            self.audio_processor = None
+            logger.warning("Audio processor not initialized because data manager is not available")
         
         logger.info("Main window initialized")
     
     def _init_data_manager(self):
         """Initialize the data manager."""
         try:
-            from src.database.db_manager import DatabaseManager
-            
             # Get database path from settings or use default
             db_path = self.settings.value("database/path", str(Path.home() / ".vsat" / "vsat.db"))
             
@@ -81,11 +84,11 @@ class MainWindow(QMainWindow):
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             
             # Initialize database manager
-            db_manager = DatabaseManager(db_path)
+            db_manager = DataManager(db_path)
             db_manager.initialize_database()
             
             # Initialize data manager
-            self.data_manager = DataManager(db_manager)
+            self.data_manager = db_manager
             
             logger.info(f"Data manager initialized with database at {db_path}")
             

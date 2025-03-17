@@ -23,19 +23,19 @@ from src.ui.transcript_segment_widget import TranscriptSegmentWidget
 from src.ui.search_panel import SearchPanel
 from src.ui.search_result import SearchResult
 from src.ui.export_dialog import ExportDialog
-from src.ui.export_tabs import ExportTabs
-from src.ui.export_handlers import (
-    TranscriptExportHandler,
-    AudioExportHandler,
-    SelectionExportHandler
+from src.ui.export_tabs import (
+    create_transcript_tab,
+    create_audio_tab,
+    create_selection_tab,
+    create_speaker_tab
 )
+from src.ui.export_handlers import ExportHandlers
 from src.ui.export_error_dialog import ExportErrorDialog
 from src.ui.export_error_tracker import ExportErrorTracker
 from src.ui.accessibility import AccessibilityManager
 from src.ui.accessibility_dialog import AccessibilityDialog
 from src.ui.flow_layout import FlowLayout
-from src.ui.main_window import MainWindow
-from src.ui.vad_visualization import VadVisualization
+from src.ui.vad_visualization import VADVisualizationWidget
 from src.ui.content_analysis_panel import ContentAnalysisPanel
 from src.ui.data_management_dialog import DataManagementDialog
 
@@ -50,16 +50,17 @@ __all__ = [
     'SearchPanel',
     'SearchResult',
     'ExportDialog',
-    'ExportTabs',
-    'TranscriptExportHandler',
-    'AudioExportHandler',
-    'SelectionExportHandler',
+    'create_transcript_tab',
+    'create_audio_tab',
+    'create_selection_tab',
+    'create_speaker_tab',
+    'ExportHandlers',
     'ExportErrorDialog',
     'ExportErrorTracker',
     'AccessibilityManager',
     'AccessibilityDialog',
     'FlowLayout',
-    'VadVisualization',
+    'VADVisualizationWidget',
     'ContentAnalysisPanel',
     'DataManagementDialog'
-] 
+]

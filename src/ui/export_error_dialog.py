@@ -23,10 +23,10 @@ class ExportErrorDialog(QDialog):
     """Dialog for displaying and managing export errors."""
     
     # Signal emitted when the user wants to retry an export
-    retryRequested = pyqtSignal(ExportAttempt)
+    retryRequested = pyqtSignal(object)  # ExportAttempt
     
     # Signal emitted when the user wants to retry all failed exports
-    retryAllRequested = pyqtSignal(List[ExportAttempt])
+    retryAllRequested = pyqtSignal(object)  # List[ExportAttempt]
     
     def __init__(self, parent=None, failures: List[ExportAttempt] = None):
         """Initialize the export error dialog.

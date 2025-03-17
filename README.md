@@ -1,7 +1,5 @@
 # Voice Separation & Analysis Tool (VSAT)
 
-<div align="center">
-  
 ![VSAT Logo](https://via.placeholder.com/200x200.png?text=VSAT)
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
@@ -11,8 +9,6 @@
 **A comprehensive desktop application for audio recording analysis, speaker separation, transcription, and content analysis.**
 
 [Key Features](#key-features) | [Demo](#demo) | [Installation](#installation) | [Usage](#usage) | [Step-by-Step Guide](#step-by-step-guide) | [Architecture](#architecture) | [Development](#development) | [Contributing](#contributing) | [License](#license)
-
-</div>
 
 ## Overview
 
@@ -50,7 +46,7 @@ By leveraging recent advancements in speaker diarization and speech recognition 
 
 - **Automatic Transcription**: High-accuracy speech-to-text using the Whisper model with support for multiple languages and <15% WER for clear speech
 - **Word-Level Alignment**: Precise boundary detection for each word in the transcript with <100ms precision
-- **Text Analysis**: 
+- **Text Analysis**:
   - **Topic Modeling**: Extract main topics from conversations using LDA and NMF algorithms with visualization
   - **Keyword Extraction**: Identify important terms and phrases with frequency and relevance scoring
   - **Summarization**: Generate concise summaries of long recordings with customizable length
@@ -86,9 +82,11 @@ By leveraging recent advancements in speaker diarization and speech recognition 
 VSAT includes several interactive demo applications to showcase its capabilities:
 
 ### Voice Activity Detection Demo
+
 ![VAD Demo](https://via.placeholder.com/800x400.png?text=VAD+Demo)
 
 Demonstrates the Voice Activity Detection capabilities with:
+
 - Interactive visualization of speech segments with real-time updates
 - Adjustable sensitivity settings with immediate visual feedback
 - Advanced configuration options for different audio environments
@@ -96,9 +94,11 @@ Demonstrates the Voice Activity Detection capabilities with:
 - Live audio input processing option for real-time demonstrations
 
 ### Content Analysis Demo
+
 ![Content Analysis Demo](https://via.placeholder.com/800x400.png?text=Content+Analysis+Demo)
 
 Showcases the content analysis features:
+
 - Topic extraction with interactive topic modeling visualization
 - Keyword identification with relevance scoring and highlighting
 - Sentiment analysis visualization showing emotional flow over time
@@ -106,7 +106,8 @@ Showcases the content analysis features:
 - Summary generation with adjustable length and focus options
 
 Run the demos using:
-```bash
+
+```python
 python -m src.demos.run_demos
 ```
 
@@ -127,6 +128,7 @@ The demo launcher provides a user-friendly interface to select and run any of th
 ### Dependencies
 
 VSAT relies on several key libraries:
+
 - **PyTorch & TorchAudio**: For deep learning models and audio processing
 - **Librosa**: For audio feature extraction and advanced signal processing
 - **PyAudio**: For real-time audio playback and recording capabilities
@@ -140,30 +142,28 @@ VSAT relies on several key libraries:
 
 ### Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/vsat.git
-   cd vsat
-   ```
+1. Create a virtual environment (strongly recommended):
 
-2. Create a virtual environment (strongly recommended):
    ```bash
    python -m venv venv
    venv\Scripts\activate  # Windows
    source venv/bin/activate  # Linux/macOS
    ```
 
-3. Install the package in development mode:
+2. Install the package in development mode:
+
    ```bash
    pip install -e .
    ```
 
-4. Download required models (first run will download automatically, but can be done manually):
+3. Download required models (first run will download automatically, but can be done manually):
+
    ```bash
    python -m src.ml.model_downloader
    ```
 
-5. Verify installation:
+4. Verify installation:
+
    ```bash
    python -m src.utils.system_check
    ```
@@ -173,10 +173,13 @@ VSAT relies on several key libraries:
 ### Basic Operation
 
 1. Launch the application:
+
    ```bash
    python -m src.main
    ```
+
    Or if installed as a package:
+
    ```bash
    vsat
    ```
@@ -247,6 +250,7 @@ This comprehensive guide walks you through every aspect of using VSAT, from inst
    - Download from [python.org](https://www.python.org/downloads/)
    - During installation, check "Add Python to PATH"
    - Verify installation by opening Command Prompt and typing:
+
      ```bash
      python --version
      ```
@@ -255,25 +259,32 @@ This comprehensive guide walks you through every aspect of using VSAT, from inst
    - Open Command Prompt as Administrator
    - Navigate to your desired installation directory
    - Clone the repository:
+
      ```bash
      git clone https://github.com/yourusername/vsat.git
      cd vsat
      ```
+
    - Create and activate a virtual environment:
+
      ```bash
      python -m venv venv
      venv\Scripts\activate
      ```
+
    - Install VSAT and dependencies:
+
      ```bash
      pip install -e .
      ```
 
 3. **First Launch**:
    - From the activated virtual environment, run:
+
      ```bash
      python -m src.main
      ```
+
    - The first launch will download required ML models (approximately 2-4GB)
    - A progress bar will display download status
    - After model download completes, the main application window will appear
@@ -281,6 +292,7 @@ This comprehensive guide walks you through every aspect of using VSAT, from inst
 #### Troubleshooting First Launch
 
 - **Missing Dependencies**: If you encounter errors about missing packages, run:
+
   ```bash
   pip install -r requirements.txt
   ```
@@ -294,6 +306,7 @@ This comprehensive guide walks you through every aspect of using VSAT, from inst
   1. Check your internet connection
   2. Try running with administrator privileges
   3. Manually download models using:
+
      ```bash
      python -m src.ml.model_downloader --force
      ```
@@ -303,6 +316,7 @@ This comprehensive guide walks you through every aspect of using VSAT, from inst
 #### Supported Audio Formats
 
 VSAT supports the following audio formats:
+
 - WAV (`.wav`) - Recommended for highest quality
 - MP3 (`.mp3`) - Good for compressed files
 - FLAC (`.flac`) - Lossless compression
@@ -883,7 +897,7 @@ VSAT implements a comprehensive error handling framework designed for robustness
 
 ### Project Structure
 
-```
+```text
 vsat/
 ├── data/                 # Sample data for testing
 ├── docs/                 # Documentation
@@ -893,3 +907,11 @@ vsat/
 ├── models/               # Storage for ML models
 ├── src/                  # Source code
 │   ├── audio/            # Audio processing modules
+│   ├── ml/               # Machine learning models
+│   ├── transcription/    # Speech-to-text and word alignment
+│   ├── database/         # Database interactions and schema
+│   ├── export/           # Export functionality
+│   ├── ui/               # Graphical user interface
+│   └── utils/            # Utility functions
+├── tests/                # Unit tests and integration tests
+└── venv/                 # Virtual environment

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
-from src.ui.app import MainWindow
+from src.ui.main_window import MainWindow
 from src.utils.error_handler import install_global_error_handler
 
 # Configure logging
@@ -61,11 +61,11 @@ def main():
     app.setApplicationVersion("1.0.0")
     
     # Create main window
-    window = MainWindow()
+    window = MainWindow(app)
     window.show()
     
     # Run application event loop
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    main() 
+    main()

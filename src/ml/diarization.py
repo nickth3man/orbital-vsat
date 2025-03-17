@@ -11,11 +11,12 @@ import numpy as np
 import torch
 from typing import Dict, Any, List, Optional, Tuple, Union
 from pyannote.audio import Pipeline
-from pyannote.core import Segment, Annotation
+from pyannote.core import Segment as PyannoteSegment, Annotation
 import soundfile as sf
 import tempfile
 import traceback
 import time
+from dataclasses import dataclass, field
 
 from ..utils.error_handler import VSATError, ErrorSeverity
 from .error_handling import DiarizationError, ResourceExhaustionError
@@ -32,6 +33,106 @@ DIARIZATION_ERROR_TYPES = {
     "inference_failure": "Model inference failed",
     "file_access": "Failed to access audio file",
 }
+
+@dataclass
+class Speaker:
+    """Class representing a speaker in a diarization result."""
+    id: str
+    name: Optional[str] = None
+    confidence: float = 1.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class Segment:
+    """Class representing a segment in a diarization result."""
+    start: float
+    end: float
+    speaker: str
+    text: Optional[str] = None
+    confidence: float = 1.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class DiarizationConfig:
+    """Configuration for diarization processing."""
+    min_speakers: Optional[int] = None
+    max_speakers: Optional[int] = None
+    min_segment_duration: float = 0.5
+    collar: float = 0.15  # Collar for merging segments
+    device: str = "cpu"
+    auth_token: Optional[str] = None
+    download_root: Optional[str] = None
+    timeout: int = 300
+
+@dataclass
+class DiarizationResult:
+    """Class representing the result of a diarization process."""
+    segments: List[Segment] = field(default_factory=list)
+    speakers: List[Speaker] = field(default_factory=list)
+    audio_duration: float = 0.0
+    language: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the result to a dictionary."""
+        return {
+            "segments": [
+                {
+                    "start": segment.start,
+                    "end": segment.end,
+                    "speaker": segment.speaker,
+                    "text": segment.text,
+                    "confidence": segment.confidence,
+                    "metadata": segment.metadata
+                }
+                for segment in self.segments
+            ],
+            "speakers": [
+                {
+                    "id": speaker.id,
+                    "name": speaker.name,
+                    "confidence": speaker.confidence,
+                    "metadata": speaker.metadata
+                }
+                for speaker in self.speakers
+            ],
+            "audio_duration": self.audio_duration,
+            "language": self.language,
+            "metadata": self.metadata
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DiarizationResult':
+        """Create a DiarizationResult from a dictionary."""
+        segments = [
+            Segment(
+                start=segment["start"],
+                end=segment["end"],
+                speaker=segment["speaker"],
+                text=segment.get("text"),
+                confidence=segment.get("confidence", 1.0),
+                metadata=segment.get("metadata", {})
+            )
+            for segment in data.get("segments", [])
+        ]
+        
+        speakers = [
+            Speaker(
+                id=speaker["id"],
+                name=speaker.get("name"),
+                confidence=speaker.get("confidence", 1.0),
+                metadata=speaker.get("metadata", {})
+            )
+            for speaker in data.get("speakers", [])
+        ]
+        
+        return cls(
+            segments=segments,
+            speakers=speakers,
+            audio_duration=data.get("audio_duration", 0.0),
+            language=data.get("language"),
+            metadata=data.get("metadata", {})
+        )
 
 class Diarizer:
     """Class for speaker diarization using pyannote.audio."""
@@ -127,7 +228,7 @@ class Diarizer:
     
     def diarize(self, audio_data: np.ndarray, sample_rate: int, 
                 min_speakers: Optional[int] = None, 
-                max_speakers: Optional[int] = None) -> Dict[str, Any]:
+                max_speakers: Optional[int] = None) -> DiarizationResult:
         """Perform speaker diarization on audio data.
         
         Args:
@@ -137,7 +238,7 @@ class Diarizer:
             max_speakers: Maximum number of speakers (optional)
             
         Returns:
-            Dict[str, Any]: Diarization result
+            DiarizationResult: Diarization result
             
         Raises:
             DiarizationError: If diarization fails
@@ -154,11 +255,11 @@ class Diarizer:
         if len(audio_data) / sample_rate < 0.5:  # Less than 0.5 seconds
             logger.warning("Audio too short for reliable diarization")
             # Return a simple result with a single speaker
-            return {
-                "segments": [{"start": 0, "end": len(audio_data) / sample_rate, "speaker": "SPEAKER_0"}],
-                "speakers": ["SPEAKER_0"],
-                "warning": "Audio too short for reliable diarization"
-            }
+            return DiarizationResult(
+                segments=[Segment(start=0, end=len(audio_data) / sample_rate, speaker="SPEAKER_0")],
+                speakers=[Speaker(id="SPEAKER_0")],
+                audio_duration=len(audio_data) / sample_rate
+            )
         
         temp_path = None
         start_time = time.time()
@@ -192,7 +293,7 @@ class Diarizer:
             # Convert to our format
             result = self._convert_diarization(diarization)
             
-            logger.info(f"Diarization completed with {len(result['segments'])} segments")
+            logger.info(f"Diarization completed with {len(result.segments)} segments")
             return result
             
         except torch.cuda.OutOfMemoryError as e:
@@ -247,14 +348,14 @@ class Diarizer:
                 except Exception as e:
                     logger.warning(f"Failed to delete temporary file {temp_path}: {str(e)}")
 
-    def _convert_diarization(self, diarization: Annotation) -> Dict[str, Any]:
+    def _convert_diarization(self, diarization: Annotation) -> DiarizationResult:
         """Convert pyannote.audio diarization result to our format.
         
         Args:
             diarization: Diarization result from pyannote.audio
             
         Returns:
-            Dict[str, Any]: Diarization result in our format
+            DiarizationResult: Diarization result in our format
         """
         segments = []
         speakers = set()
@@ -262,25 +363,27 @@ class Diarizer:
         # Process each segment
         for segment, track, speaker in diarization.itertracks(yield_label=True):
             # Add segment
-            segments.append({
-                "start": segment.start,
-                "end": segment.end,
-                "speaker": speaker
-            })
+            segments.append(
+                Segment(
+                    start=segment.start,
+                    end=segment.end,
+                    speaker=speaker
+                )
+            )
             
             # Add speaker to set
             speakers.add(speaker)
         
         # Sort segments by start time
-        segments.sort(key=lambda x: x["start"])
+        segments.sort(key=lambda x: x.start)
         
-        return {
-            "segments": segments,
-            "speakers": list(speakers)
-        }
+        return DiarizationResult(
+            segments=segments,
+            speakers=[Speaker(id=speaker) for speaker in speakers]
+        )
     
-    def merge_with_transcription(self, diarization: Dict[str, Any], 
-                               transcription: Dict[str, Any]) -> Dict[str, Any]:
+    def merge_with_transcription(self, diarization: DiarizationResult, 
+                               transcription: Dict[str, Any]) -> DiarizationResult:
         """Merge diarization and transcription results.
         
         Args:
@@ -288,26 +391,32 @@ class Diarizer:
             transcription: Transcription result
             
         Returns:
-            Dict[str, Any]: Merged result
+            DiarizationResult: Merged result
         """
         # Create a copy of the diarization result
-        result = diarization.copy()
+        result = DiarizationResult(
+            segments=[Segment(**segment) for segment in diarization.segments],
+            speakers=[Speaker(**speaker) for speaker in diarization.speakers],
+            audio_duration=diarization.audio_duration,
+            language=diarization.language,
+            metadata=diarization.metadata
+        )
         
         # Get transcription segments
         trans_segments = transcription.get("segments", [])
         
         # Assign transcription to diarization segments
-        for segment in result["segments"]:
+        for segment in result.segments:
             # Find overlapping transcription segments
             segment_text = []
             
             for trans in trans_segments:
                 # Check if transcription segment overlaps with diarization segment
-                if (trans["start"] < segment["end"] and 
-                    trans["end"] > segment["start"]):
+                if (trans["start"] < segment.end and 
+                    trans["end"] > segment.start):
                     # Calculate overlap
-                    overlap_start = max(segment["start"], trans["start"])
-                    overlap_end = min(segment["end"], trans["end"])
+                    overlap_start = max(segment.start, trans["start"])
+                    overlap_end = min(segment.end, trans["end"])
                     overlap_duration = overlap_end - overlap_start
                     
                     # Calculate portion of transcription segment that overlaps
@@ -319,17 +428,17 @@ class Diarizer:
                         segment_text.append(trans["text"])
             
             # Join text and add to segment
-            segment["text"] = " ".join(segment_text)
+            segment.text = " ".join(segment_text)
         
         # Add transcription to result
-        result["transcription"] = {
+        result.metadata["transcription"] = {
             "text": transcription.get("text", ""),
             "language": transcription.get("language", "")
         }
         
         return result
     
-    def diarize_file(self, file_path: str, **kwargs) -> Dict[str, Any]:
+    def diarize_file(self, file_path: str, **kwargs) -> DiarizationResult:
         """Perform speaker diarization on an audio file.
         
         Args:
@@ -337,7 +446,7 @@ class Diarizer:
             **kwargs: Additional parameters for diarization
             
         Returns:
-            Dictionary containing diarization results
+            DiarizationResult: Diarization result
             
         Raises:
             DiarizationError: If diarization fails
@@ -360,7 +469,7 @@ class Diarizer:
                 error_context
             )
     
-    def diarize_segment(self, audio_data: np.ndarray, sample_rate: int, **kwargs) -> Dict[str, Any]:
+    def diarize_segment(self, audio_data: np.ndarray, sample_rate: int, **kwargs) -> DiarizationResult:
         """Perform speaker diarization on an audio segment.
         
         Args:
@@ -369,7 +478,7 @@ class Diarizer:
             **kwargs: Additional parameters for diarization
             
         Returns:
-            Dictionary containing diarization results
+            DiarizationResult: Diarization result
             
         Raises:
             DiarizationError: If diarization fails
