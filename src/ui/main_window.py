@@ -5,37 +5,27 @@ This module defines the MainWindow class that provides the main user interface.
 """
 
 import logging
-import threading
-from pathlib import Path
-from typing import Dict, Any, List, Optional
-import re
 import os
+from pathlib import Path
 
-from PyQt6.QtWidgets import (
-    QMainWindow, QMessageBox, QFileDialog, 
-    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QToolBar, QStatusBar, QProgressBar, QLabel, QPushButton,
-    QMenu, QMenuBar, QSlider, QInputDialog, QTabWidget, QProgressDialog
-)
-from PyQt6.QtCore import Qt, QSettings, pyqtSignal, pyqtSlot, QTimer
-from PyQt6.QtGui import QAction, QIcon, QColor
+from PyQt6.QtWidgets import QMainWindow, QMessageBox
+from PyQt6.QtCore import QSettings
 
-from src.ui.waveform_view import WaveformView
-from src.ui.transcript_view import TranscriptView
-from src.ui.search_panel import SearchPanel
+from src.ui.components import UIComponentManager
+from src.ui.menu_manager import MenuManager
+from src.ui.event_handlers import EventHandler
+from src.ui.file_operations import FileOperations
+from src.ui.window_state import WindowStateManager
 from src.ui.export_handlers import ExportHandlers
 from src.ui.batch_processing_dialog import BatchProcessingDialog
-from src.audio.file_handler import AudioFileHandler
-from src.audio.processor import AudioProcessor
-from src.audio.audio_player import AudioPlayer
-from src.utils.error_handler import ErrorHandler, ExportError, FileError, ErrorSeverity
-from src.ui.processing_worker import ProcessingWorker
 from src.ui.accessibility_dialog import AccessibilityDialog
-from src.ui.content_analysis_panel import ContentAnalysisPanel
 from src.ui.data_management_dialog import DataManagementDialog
+from src.audio.audio_player import AudioPlayer
+from src.audio.processor import AudioProcessor
 from src.database.data_manager import DataManager
 
 logger = logging.getLogger(__name__)
+
 
 class MainWindow(QMainWindow):
     """Main window for the VSAT application."""
@@ -49,45 +39,66 @@ class MainWindow(QMainWindow):
         self.audio_processor = None
         self.processing_worker = None
         self.audio_player = AudioPlayer()
-        self.settings = QSettings("VSAT", "Voice Separation & Analysis Tool")
         
         # Initialize data manager
         self.data_manager = None
         self._init_data_manager()
         
-        # Initialize export handlers
+        # Get the database manager from data manager
+        db_manager = self.data_manager.db_manager if self.data_manager else None
+        
+        # Initialize component managers
         self.export_handlers = ExportHandlers(self)
+        self.ui_components = UIComponentManager(self)
+        self.menu_manager = MenuManager(self)
+        self.file_operations = FileOperations(self)
+        self.window_state = WindowStateManager(self)
+        self.event_handler = EventHandler(self)
         
-        # Initialize UI
-        self._init_ui()
+        # Initialize UI components
+        self.ui_components.initialize()
+        self.menu_manager.create_menus_and_toolbars()
+        self.event_handler.connect_signals()
         
-        # Restore window geometry
-        self.restore_geometry()
-        
-        # Initialize audio processor with db_manager if available
-        if self.data_manager is not None and hasattr(self.data_manager, 'db_manager'):
-            self.audio_processor = AudioProcessor(db_manager=self.data_manager.db_manager)
+        # Initialize audio processor with db_manager
+        if db_manager:
+            self.audio_processor = AudioProcessor(db_manager)
             logger.info("Audio processor initialized successfully")
         else:
-            self.audio_processor = None
-            logger.warning("Audio processor not initialized because data manager is not available")
+            # Create a fallback if data manager initialization failed
+            from src.database.db_manager import DatabaseManager
+            fallback_db = DatabaseManager(":memory:")  # Use in-memory database
+            self.audio_processor = AudioProcessor(fallback_db)
+            logger.warning(
+                "Using in-memory database for audio processor due to "
+                "data manager initialization failure"
+            )
+        
+        # Restore window geometry
+        self.window_state.restore_geometry()
         
         logger.info("Main window initialized")
     
     def _init_data_manager(self):
         """Initialize the data manager."""
         try:
+            # Get settings from window state manager
+            settings = QSettings("VSAT", "Voice Separation & Analysis Tool")
+            
             # Get database path from settings or use default
-            db_path = self.settings.value("database/path", str(Path.home() / ".vsat" / "vsat.db"))
+            db_path = settings.value(
+                "database/path", 
+                str(Path.home() / ".vsat" / "vsat.db")
+            )
             
             # Ensure directory exists
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             
-            # Initialize database manager
+            # Initialize data manager
             db_manager = DataManager(db_path)
             db_manager.initialize_database()
             
-            # Initialize data manager
+            # Store data manager
             self.data_manager = db_manager
             
             logger.info(f"Data manager initialized with database at {db_path}")
@@ -95,290 +106,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Failed to initialize data manager: {str(e)}")
             self.data_manager = None
-    
-    def _init_ui(self):
-        """Initialize the UI components."""
-        # Set window properties
-        self.setWindowTitle("Voice Separation & Analysis Tool")
-        self.setMinimumSize(1200, 800)
-        
-        # Create central widget and layout
-        central_widget = QWidget()
-        main_layout = QVBoxLayout(central_widget)
-        
-        # Create splitter for main components
-        main_splitter = QSplitter(Qt.Orientation.Vertical)
-        
-        # Create waveform view
-        self.waveform_view = WaveformView()
-        main_splitter.addWidget(self.waveform_view)
-        
-        # Create horizontal splitter for transcript and tools
-        bottom_splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # Create transcript view
-        self.transcript_view = TranscriptView()
-        bottom_splitter.addWidget(self.transcript_view)
-        
-        # Create tab widget for tools
-        tools_tab_widget = QTabWidget()
-        
-        # Create search panel
-        self.search_panel = SearchPanel()
-        tools_tab_widget.addTab(self.search_panel, "Search")
-        
-        # Create content analysis panel
-        self.content_analysis_panel = ContentAnalysisPanel()
-        tools_tab_widget.addTab(self.content_analysis_panel, "Content Analysis")
-        
-        bottom_splitter.addWidget(tools_tab_widget)
-        
-        # Set initial sizes
-        bottom_splitter.setSizes([600, 400])
-        
-        main_splitter.addWidget(bottom_splitter)
-        
-        # Set initial sizes
-        main_splitter.setSizes([300, 500])
-        
-        # Add components to main layout
-        main_layout.addWidget(main_splitter)
-        
-        # Create status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        
-        # Create progress bar in status bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setVisible(False)
-        self.status_bar.addPermanentWidget(self.progress_bar)
-        
-        # Create menu bar
-        self.create_menu_bar()
-        
-        # Create toolbar
-        self.create_toolbar()
-        
-        # Connect signals
-        self.waveform_view.positionClicked.connect(self.on_position_clicked)
-        self.waveform_view.rangeSelected.connect(self.on_range_selected)
-        self.transcript_view.wordClicked.connect(self.on_word_clicked)
-        self.transcript_view.wordsSelected.connect(self.on_words_selected)
-        self.search_panel.searchRequested.connect(self.on_search_requested)
-        self.search_panel.resultSelected.connect(self.on_search_result_selected)
-        self.audio_player.position_changed.connect(self.on_playback_position_changed)
-        self.audio_player.playback_state_changed.connect(self.on_playback_state_changed)
-        self.content_analysis_panel.important_moment_selected.connect(self.on_important_moment_selected)
-    
-    def create_menu_bar(self):
-        """Create the menu bar."""
-        menu_bar = self.menuBar()
-        
-        # File menu
-        file_menu = menu_bar.addMenu("&File")
-        
-        open_action = QAction("&Open...", self)
-        open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(lambda: self.open_file())
-        file_menu.addAction(open_action)
-        
-        # Add batch processing action
-        batch_action = QAction("&Batch Processing...", self)
-        batch_action.setShortcut("Ctrl+B")
-        batch_action.triggered.connect(self.show_batch_processing_dialog)
-        file_menu.addAction(batch_action)
-        
-        file_menu.addSeparator()
-        
-        exit_action = QAction("E&xit", self)
-        exit_action.setShortcut("Alt+F4")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        
-        # Playback menu
-        playback_menu = menu_bar.addMenu("&Playback")
-        
-        play_pause_action = QAction("Play/Pause", self)
-        play_pause_action.setShortcut("Space")
-        play_pause_action.triggered.connect(self.toggle_playback)
-        playback_menu.addAction(play_pause_action)
-        
-        stop_action = QAction("Stop", self)
-        stop_action.setShortcut("Ctrl+.")
-        stop_action.triggered.connect(self.stop_playback)
-        playback_menu.addAction(stop_action)
-        
-        # Export menu
-        export_menu = menu_bar.addMenu("&Export")
-        
-        export_transcript_action = QAction("Export &Transcript...", self)
-        export_transcript_action.triggered.connect(self.export_handlers.export_transcript)
-        export_menu.addAction(export_transcript_action)
-        
-        export_audio_action = QAction("Export &Audio...", self)
-        export_audio_action.triggered.connect(self.export_handlers.export_audio)
-        export_menu.addAction(export_audio_action)
-        
-        # Tools menu
-        tools_menu = menu_bar.addMenu("&Tools")
-        
-        data_management_action = QAction("&Data Management...", self)
-        data_management_action.triggered.connect(self.show_data_management_dialog)
-        tools_menu.addAction(data_management_action)
-        
-        accessibility_action = QAction("&Accessibility Settings...", self)
-        accessibility_action.triggered.connect(self.show_accessibility_dialog)
-        tools_menu.addAction(accessibility_action)
-        
-        # Help menu
-        help_menu = menu_bar.addMenu("&Help")
-        
-        about_action = QAction("&About", self)
-        about_action.triggered.connect(self.show_about_dialog)
-        help_menu.addAction(about_action)
-    
-    def create_toolbar(self):
-        """Create the toolbar."""
-        toolbar = QToolBar("Main Toolbar")
-        self.addToolBar(toolbar)
-        
-        # Add playback controls
-        play_action = toolbar.addAction("Play")
-        play_action.triggered.connect(self.toggle_playback)
-        
-        stop_action = toolbar.addAction("Stop")
-        stop_action.triggered.connect(self.stop_playback)
-    
-    def restore_geometry(self):
-        """Restore window geometry from settings."""
-        geometry = self.settings.value("geometry")
-        if geometry:
-            self.restoreGeometry(geometry)
-        else:
-            # Default to center of screen
-            screen_geometry = QApplication.primaryScreen().availableGeometry()
-            self.setGeometry(
-                (screen_geometry.width() - 1024) // 2,
-                (screen_geometry.height() - 768) // 2,
-                1024, 768
-            )
-    
-    def save_geometry(self):
-        """Save window geometry to settings."""
-        self.settings.setValue("geometry", self.saveGeometry())
-    
-    def open_file(self, file_path=None):
-        """Open an audio file for processing.
-        
-        Args:
-            file_path: Optional path to the audio file
-        """
-        if not file_path:
-            file_path, _ = QFileDialog.getOpenFileName(
-                self,
-                "Open Audio File",
-                str(Path.home()),
-                "Audio Files (*.wav *.mp3 *.flac);;All Files (*)"
-            )
-        
-        if file_path:
-            logger.info(f"Opening file: {file_path}")
-            self.current_file = file_path
-            
-            # Update window title
-            file_name = Path(file_path).name
-            self.setWindowTitle(f"{file_name} - Voice Separation & Analysis Tool")
-            
-            # Show status message
-            self.status_bar.showMessage(f"Processing: {file_name}")
-            
-            # Show progress bar
-            self.progress_bar.setValue(0)
-            self.progress_bar.setVisible(True)
-            
-            # Start processing in a separate thread
-            self.processing_worker = ProcessingWorker(file_path)
-            self.processing_worker.progressUpdated.connect(self.update_processing_progress)
-            self.processing_worker.processingComplete.connect(self.processing_complete)
-            self.processing_worker.errorOccurred.connect(self.processing_error)
-            self.processing_worker.start()
-    
-    @pyqtSlot(str, float)
-    def update_processing_progress(self, status: str, progress: float):
-        """Update processing progress in the UI.
-        
-        Args:
-            status: Status message
-            progress: Progress value (0.0 to 1.0)
-        """
-        # Update status bar
-        self.status_bar.showMessage(status)
-        
-        # Update progress bar
-        self.progress_bar.setValue(int(progress * 100))
-    
-    @pyqtSlot(dict)
-    def processing_complete(self, results: Dict[str, Any]):
-        """Handle completion of audio processing.
-        
-        Args:
-            results: Processing results
-        """
-        # Hide progress bar
-        self.progress_bar.setVisible(False)
-        
-        # Update status bar
-        file_name = Path(self.current_file).name
-        self.status_bar.showMessage(f"Loaded: {file_name}")
-        
-        # Store results
-        self.segments = results.get('segments', [])
-        
-        # Update UI components
-        self.update_ui_with_results()
-    
-    @pyqtSlot(str)
-    def processing_error(self, error_message: str):
-        """Handle processing error.
-        
-        Args:
-            error_message: Error message
-        """
-        # Hide progress bar
-        self.progress_bar.setVisible(False)
-        
-        # Update status bar
-        self.status_bar.showMessage("Error processing file")
-        
-        # Show error message
-        QMessageBox.critical(
-            self,
-            "Processing Error",
-            f"An error occurred while processing the file:\n\n{error_message}"
-        )
-    
-    def update_ui_with_results(self):
-        """Update UI components with processing results."""
-        # Update waveform view
-        if self.current_file:
-            self.waveform_view.set_audio_data(self.current_file)
-        
-        # Update waveform segments
-        self.waveform_view.set_segments(self.segments)
-        
-        # Update transcript view
-        self.transcript_view.set_segments(self.segments)
-        
-        # Update search panel
-        self.search_panel.set_segments(self.segments)
-        
-        # Update content analysis panel
-        self.content_analysis_panel.set_segments(self.segments)
-        
-        # Load audio file in player
-        if self.current_file:
-            self.audio_player.load_file(self.current_file)
     
     def toggle_playback(self):
         """Toggle playback of the current audio file."""
@@ -388,285 +115,62 @@ class MainWindow(QMainWindow):
         if self.audio_player.is_playing():
             self.audio_player.pause()
         else:
+            # Get waveform view from UI components
+            waveform_view = self.ui_components.get_waveform_view()
+            
             # If there's a selection, play that range
-            if self.waveform_view.has_selection():
-                start, end = self.waveform_view.get_selection_range()
-                self.audio_player.play(self.current_file, start, end)
+            if waveform_view and waveform_view.has_selection():
+                start, end = waveform_view.get_selection_range()
+                self.audio_player.play_segment(start, end)
             else:
                 # Otherwise play from current position
-                self.audio_player.play(self.current_file)
+                self.audio_player.play()
     
     def stop_playback(self):
         """Stop playback of the current audio file."""
-        self.audio_player.stop()
-    
-    def on_playback_position_changed(self, position):
-        """Handle playback position changes."""
-        self.waveform_view.set_current_position(position)
-        self.transcript_view.set_current_position(position)
-    
-    def on_playback_state_changed(self, is_playing):
-        """Handle playback state changes."""
-        # Update UI based on playback state
-        pass
+        if self.audio_player:
+            self.audio_player.stop()
     
     def show_about_dialog(self):
         """Show the about dialog."""
         QMessageBox.about(
             self,
-            "About Voice Separation & Analysis Tool",
-            "Voice Separation & Analysis Tool (VSAT)\n\n"
-            "A tool for analyzing and separating voices in audio recordings.\n\n"
-            "Version: 0.1.0"
+            "About VSAT",
+            "Voice Separation & Analysis Tool\n\n"
+            "A tool for separating and analyzing voice recordings."
         )
-    
-    def closeEvent(self, event):
-        """Handle window close event."""
-        # Save window geometry
-        self.save_geometry()
-        
-        # TODO: Check for unsaved changes
-        
-        # Accept the close event
-        event.accept()
-    
-    def on_position_clicked(self, position):
-        """Handle click on a position in the waveform."""
-        # Update transcript view
-        self.transcript_view.set_current_position(position)
-        
-        # Update audio player position
-        self.audio_player.set_position(position)
-        
-        # Update status bar
-        minutes = int(position) // 60
-        seconds = int(position) % 60
-        milliseconds = int((position - int(position)) * 1000)
-        self.status_bar.showMessage(f"Position: {minutes:02d}:{seconds:02d}.{milliseconds:03d}")
-    
-    def on_range_selected(self, start, end):
-        """Handle selection of a range in the waveform."""
-        # Play the selected range
-        self.audio_player.play(self.current_file, start, end)
-        
-        # Update status bar
-        duration = end - start
-        self.status_bar.showMessage(f"Selected range: {start:.2f}s to {end:.2f}s (duration: {duration:.2f}s)")
-    
-    def on_word_clicked(self, word):
-        """Handle click on a word in the transcript."""
-        # Update waveform position
-        position = word['start']
-        self.waveform_view.set_current_position(position)
-        
-        # Update audio player position
-        self.audio_player.set_position(position)
-        
-        # Update status bar
-        self.status_bar.showMessage(f"Word: {word['text']} ({word['start']:.2f}s to {word['end']:.2f}s)")
-    
-    def on_words_selected(self, words):
-        """Handle selection of words in the transcript."""
-        if not words:
-            return
-            
-        # Get start and end times
-        start = min(word['start'] for word in words)
-        end = max(word['end'] for word in words)
-        
-        # Update waveform selection
-        self.waveform_view.set_selection(start, end)
-        
-        # Update status bar
-        word_count = len(words)
-        text = " ".join(word['text'] for word in words)
-        if len(text) > 50:
-            text = text[:47] + "..."
-        self.status_bar.showMessage(f"Selected {word_count} words: {text}")
-    
-    def on_search_requested(self, query, options=None):
-        """Handle search request from the search panel.
-        
-        Args:
-            query: Search query string
-            options: Optional dictionary with search options
-        """
-        # Default options if none provided
-        if options is None:
-            options = {
-                'case_sensitive': False,
-                'whole_word': False,
-                'regex': False
-            }
-        
-        # Update status bar
-        self.status_bar.showMessage(f"Searching for: {query}")
-        
-        # Check if we have segments to search through
-        if not self.segments:
-            self.search_panel.clear_results()
-            self.status_bar.showMessage("No transcript to search")
-            return
-        
-        # Search in segments
-        results = []
-        
-        # Prepare query for different search methods
-        if options['regex']:
-            try:
-                if options['case_sensitive']:
-                    pattern = re.compile(query)
-                else:
-                    pattern = re.compile(query, re.IGNORECASE)
-            except re.error:
-                self.status_bar.showMessage(f"Invalid regular expression: {query}")
-                self.search_panel.clear_results()
-                return
-        elif options['whole_word']:
-            if options['case_sensitive']:
-                pattern = re.compile(r'\b' + re.escape(query) + r'\b')
-            else:
-                pattern = re.compile(r'\b' + re.escape(query) + r'\b', re.IGNORECASE)
-        elif not options['case_sensitive']:
-            query = query.lower()
-        
-        for segment in self.segments:
-            # Get text from segment
-            segment_text = segment.get("text", "")
-            if not options['case_sensitive'] and not options['regex'] and not options['whole_word']:
-                segment_text = segment_text.lower()
-            
-            # Check if query is in segment text using the appropriate method
-            is_match = False
-            if options['regex'] or options['whole_word']:
-                is_match = bool(pattern.search(segment_text))
-            else:
-                is_match = query in segment_text
-            
-            if is_match:
-                # Get words from segment
-                words = segment.get("words", [])
-                
-                # Find matching words/phrases
-                for i, word in enumerate(words):
-                    word_text = word.get("text", "")
-                    if not options['case_sensitive'] and not options['regex'] and not options['whole_word']:
-                        word_text = word_text.lower()
-                    
-                    # Check for match using the appropriate method
-                    word_match = False
-                    if options['regex'] or options['whole_word']:
-                        word_match = bool(pattern.search(word_text))
-                    else:
-                        word_match = query in word_text
-                    
-                    if word_match:
-                        results.append({
-                            "segment": segment,
-                            "word": word,
-                            "text": word.get("text", ""),
-                            "start": word.get("start", 0),
-                            "end": word.get("end", 0),
-                            "speaker": segment.get("speaker", "Unknown"),
-                            "context": self._get_context(segment, i, 5)  # Increased context size
-                        })
-        
-        # Send results to search panel
-        self.search_panel.display_results(results)
-        
-        # Update status bar with count
-        count = len(results)
-        self.status_bar.showMessage(f"Found {count} result{'s' if count != 1 else ''} for: {query}")
-    
-    def _get_context(self, segment, word_index, context_size=3):
-        """Get context around a word in a segment.
-        
-        Args:
-            segment: Segment containing the word
-            word_index: Index of the word in the segment
-            context_size: Number of words to include before and after
-            
-        Returns:
-            Context string
-        """
-        words = segment.get("words", [])
-        
-        # Get words before and after the matched word
-        start_idx = max(0, word_index - context_size)
-        end_idx = min(len(words), word_index + context_size + 1)
-        
-        # Extract context words and highlight the matched word
-        context_words = []
-        for i in range(start_idx, end_idx):
-            word_text = words[i].get("text", "")
-            if i == word_index:
-                context_words.append(f"**{word_text}**")  # Highlight matched word
-            else:
-                context_words.append(word_text)
-        
-        return " ".join(context_words)
-    
-    def on_search_result_selected(self, result):
-        """Handle selection of a search result."""
-        if result and 'start' in result:
-            # Set playback position
-            if self.audio_player:
-                self.audio_player.set_position(result['start'])
-            
-            # Highlight in transcript view
-            if self.transcript_view:
-                self.transcript_view.scroll_to_position(result['start'])
-            
-            # Highlight in waveform view
-            if self.waveform_view:
-                self.waveform_view.set_position(result['start'])
-    
-    def on_important_moment_selected(self, moment):
-        """Handle selection of an important moment."""
-        if moment and 'start' in moment:
-            # Set playback position
-            if self.audio_player:
-                self.audio_player.set_position(moment['start'])
-            
-            # Highlight in transcript view
-            if self.transcript_view:
-                self.transcript_view.scroll_to_position(moment['start'])
-            
-            # Highlight in waveform view
-            if self.waveform_view:
-                self.waveform_view.set_position(moment['start'])
-            
-            # Play the segment
-            if self.audio_player and 'end' in moment:
-                self.audio_player.play_segment(moment['start'], moment['end'])
     
     def show_data_management_dialog(self):
         """Show the data management dialog."""
+        if not self.data_manager:
+            QMessageBox.warning(
+                self,
+                "Data Management",
+                "Data manager is not initialized. Please try again later."
+            )
+            return
+        
         dialog = DataManagementDialog(self.data_manager, self)
         dialog.exec()
     
     def show_batch_processing_dialog(self):
         """Show the batch processing dialog."""
-        # Create and show the batch processing dialog
-        dialog = BatchProcessingDialog(
-            parent=self,
-            data_manager=self.data_manager,
-            initial_files=[self.current_file] if self.current_file else []
-        )
+        if not self.audio_processor:
+            QMessageBox.warning(
+                self,
+                "Batch Processing",
+                "Audio processor is not initialized. Please try again later."
+            )
+            return
         
-        # Show the dialog
+        dialog = BatchProcessingDialog(self.audio_processor, self)
         dialog.exec()
-        
-        # Refresh data management if needed
-        if self.data_manager and dialog.batch_processor:
-            # Check if any files were processed successfully
-            status = dialog.batch_processor.get_task_status()
-            if status["completed"]:
-                # Refresh data management dialog if it's open
-                if hasattr(self, "data_management_dialog") and self.data_management_dialog.isVisible():
-                    self.data_management_dialog.refresh_data()
     
     def show_accessibility_dialog(self):
         """Show the accessibility settings dialog."""
         dialog = AccessibilityDialog(self)
-        dialog.exec() 
+        dialog.exec()
+    
+    def closeEvent(self, event):
+        """Handle window close event."""
+        self.window_state.handle_close_event(event)

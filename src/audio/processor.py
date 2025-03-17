@@ -21,7 +21,7 @@ from src.audio.file_handler import AudioFileHandler
 from src.audio.audio_preprocessor import AudioPreprocessor
 from src.transcription.whisper_transcriber import WhisperTranscriber
 from src.ml.diarization import Diarizer
-from src.ml.speaker_identification import SpeakerIdentifier
+from ..ml.speaker_identification import SpeakerIdentifier
 from src.ml.voice_activity_detection import VoiceActivityDetector
 from src.database.db_manager import DatabaseManager
 from src.database.models import Recording, Speaker, TranscriptSegment, TranscriptWord

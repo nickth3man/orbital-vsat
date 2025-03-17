@@ -1,29 +1,33 @@
 """
 Export handlers for the VSAT UI.
 
-This module provides handlers for exporting transcripts, audio segments, and other data.
+This module provides handlers for exporting transcripts, audio segments, 
+and other data.
 """
 
 import os
 import logging
 import threading
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QDialogButtonBox,
+    QDialog, QVBoxLayout, QCheckBox, QDialogButtonBox,
     QMessageBox, QFileDialog, QInputDialog, QLabel
 )
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import pyqtSlot, QObject
 
 from src.export.export_manager import ExportManager
-from src.utils.error_handler import ErrorHandler, ExportError, FileError, ErrorSeverity
-from src.ui.export_error_tracker import ExportErrorTracker, ExportOperation, ExportAttempt
+from src.utils.error_handler import ErrorHandler, ExportError, ErrorSeverity
+from src.ui.export_error_tracker import (
+    ExportErrorTracker, ExportOperation, ExportAttempt
+)
 from src.ui.export_error_dialog import ExportErrorDialog
 
 logger = logging.getLogger(__name__)
 
-class ExportHandlers:
+
+class ExportHandlers(QObject):
     """Handles all export functionality for the VSAT UI."""
     
     def __init__(self, parent):
@@ -32,6 +36,7 @@ class ExportHandlers:
         Args:
             parent: Parent window (MainWindow)
         """
+        super().__init__(parent)
         self.parent = parent
         self.export_manager = ExportManager()
         self.error_tracker = ExportErrorTracker()
@@ -297,7 +302,7 @@ class ExportHandlers:
             
             if not directory:
                 return
-                
+            
             # Start tracking export operation
             self.error_tracker.start_tracking(
                 ExportOperation.SPEAKER_AUDIO,
@@ -571,7 +576,7 @@ class ExportHandlers:
             "include_words": include_words_checkbox.isChecked()
         }
     
-    @pyqtSlot(ExportOperation, str, str)
+    @pyqtSlot(object, str, str)
     def _on_export_failed(self, operation: ExportOperation, error_message: str, target_path: str):
         """Handle export failure signal.
         
