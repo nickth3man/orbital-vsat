@@ -21,12 +21,12 @@ from src.audio.file_handler import AudioFileHandler
 from src.audio.audio_preprocessor import AudioPreprocessor
 from src.transcription.whisper_transcriber import WhisperTranscriber
 from src.ml.diarization import Diarizer
-from ..ml.speaker_identification import SpeakerIdentifier
+from src.ml.model_manager import ModelManager, _model_lock
+from src.ml.speaker_identification import SpeakerIdentifier
 from src.ml.voice_activity_detection import VoiceActivityDetector
 from src.database.db_manager import DatabaseManager
 from src.database.models import Recording, Speaker, TranscriptSegment, TranscriptWord
 from src.utils.error_handler import ProcessingError, AudioError, FileError, ErrorSeverity
-from src.ml.model_manager import ModelManager, _model_lock
 from src.ml.error_handling import AudioProcessingError, ModelLoadError, ResourceExhaustionError
 from src.audio.chunked_processor import ChunkedProcessor
 from src.config import Config

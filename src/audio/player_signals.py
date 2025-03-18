@@ -10,9 +10,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 
 from src.audio.player_state import PlaybackState
 
-
 logger = logging.getLogger(__name__)
-
 
 class PlayerSignalHandler(QObject):
     """Handles signal connections and processing for the audio player."""
@@ -27,7 +25,6 @@ class PlayerSignalHandler(QObject):
         super().__init__(parent)
         self.player_obj = player_obj
         logger.debug("Player signal handler initialized")
-
 
     @pyqtSlot(int)
     def on_position_changed(self, position_ms: int):
@@ -44,7 +41,6 @@ class PlayerSignalHandler(QObject):
 
         # Emit the position signal
         self.player_obj.positionChanged.emit(position_seconds)
-
 
     @pyqtSlot(QMediaPlayer.PlaybackState)
     def on_state_changed(self, state: QMediaPlayer.PlaybackState):
@@ -76,7 +72,6 @@ class PlayerSignalHandler(QObject):
             # (segment playback has its own handling)
             if not self.player_obj.state.is_segment_playback:
                 self.player_obj.playbackFinished.emit()
-
 
     @pyqtSlot(QMediaPlayer.Error, str)
     def on_error(self, error: QMediaPlayer.Error, error_string: str):

@@ -1,6 +1,7 @@
 README.md
 setup.py
 src/__init__.py
+src/config.py
 src/main.py
 src/audio/__init__.py
 src/audio/audio_player.py
@@ -44,6 +45,7 @@ src/ml/diarization.py
 src/ml/error_handling.py
 src/ml/model_manager.py
 src/ml/speaker_identification.py
+src/ml/test_speaker.py
 src/ml/voice_activity_detection.py
 src/ml/voice_print_processor.py
 src/transcription/__init__.py
@@ -55,15 +57,20 @@ src/ui/accessibility.py
 src/ui/accessibility_dialog.py
 src/ui/app.py
 src/ui/batch_processing_dialog.py
+src/ui/components.py
 src/ui/content_analysis_panel.py
 src/ui/data_management_dialog.py
+src/ui/event_handlers.py
 src/ui/export_dialog.py
 src/ui/export_error_dialog.py
 src/ui/export_error_tracker.py
 src/ui/export_handlers.py
 src/ui/export_tabs.py
+src/ui/file_operations.py
 src/ui/flow_layout.py
 src/ui/main_window.py
+src/ui/menu_manager.py
+src/ui/processing_worker.py
 src/ui/search_panel.py
 src/ui/search_result.py
 src/ui/transcript_segment_widget.py
@@ -73,8 +80,10 @@ src/ui/waveform_interaction.py
 src/ui/waveform_renderer.py
 src/ui/waveform_view.py
 src/ui/waveform_widget.py
+src/ui/window_state.py
 src/utils/__init__.py
 src/utils/error_handler.py
+src/utils/ffmpeg_handler.py
 src/utils/performance_optimizer.py
 tests/__init__.py
 tests/run_db_tests.py

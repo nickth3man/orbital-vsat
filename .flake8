@@ -1,0 +1,6 @@
+[flake8]
+max-line-length = 100
+exclude = .git,__pycache__,build,dist
+# Ignore E501 (line too long) for setup.py which has standard patterns that exceed line length
+per-file-ignores =
+    setup.py:E501

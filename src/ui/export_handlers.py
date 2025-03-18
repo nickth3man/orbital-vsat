@@ -1,15 +1,14 @@
 """
 Export handlers for the VSAT UI.
 
-This module provides handlers for exporting transcripts, audio segments, 
+This module provides handlers for exporting transcripts, audio segments,
 and other data.
 """
 
 import os
 import logging
 import threading
-from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, Optional, Callable
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QCheckBox, QDialogButtonBox,
@@ -29,10 +28,10 @@ logger = logging.getLogger(__name__)
 
 class ExportHandlers(QObject):
     """Handles all export functionality for the VSAT UI."""
-    
-    def __init__(self, parent):
+
+    def __init__(self, parent: QObject) -> None:
         """Initialize the export handlers.
-        
+
         Args:
             parent: Parent window (MainWindow)
         """
@@ -40,628 +39,627 @@ class ExportHandlers(QObject):
         self.parent = parent
         self.export_manager = ExportManager()
         self.error_tracker = ExportErrorTracker()
-        
+
         # Connect error tracker signals
         self.error_tracker.exportFailed.connect(self._on_export_failed)
-        
+
         # Create error dialog
         self.error_dialog = ExportErrorDialog(parent)
         self.error_dialog.retryAllRequested.connect(self._on_retry_exports)
-    
-    def export_transcript(self):
-        """Export the transcript to a file."""
+
+    def export_transcript(self) -> None:
+        """Export the current transcript as a text file."""
         try:
-            # Check if we have segments to export
-            if not self.parent.segments:
-                raise ExportError(
-                    "No transcript available to export",
-                    ErrorSeverity.WARNING,
-                    {"method": "export_transcript"}
-                )
-            
-            # Get export format
-            formats = list(self.export_manager.TRANSCRIPT_FORMATS.items())
-            format_names = [f"{key.upper()} - {desc}" for key, desc in formats]
-            
-            format_idx, ok = QInputDialog.getItem(
-                self.parent,
-                "Export Transcript",
-                "Select export format:",
-                format_names,
-                0,
-                False
-            )
-            
-            if not ok:
-                return
-                
-            format_key = formats[format_names.index(format_idx)][0]
-            
-            # Get file path
-            file_filter = f"{format_key.upper()} Files (*.{format_key})"
+            # Get export path
             file_path, _ = QFileDialog.getSaveFileName(
                 self.parent,
                 "Export Transcript",
-                str(Path.home()),
-                file_filter
+                os.path.expanduser("~/Documents"),
+                "Text Files (*.txt);;All Files (*.*)"
             )
-            
+
             if not file_path:
                 return
-                
-            # Add extension if missing
-            if not file_path.lower().endswith(f".{format_key}"):
-                file_path += f".{format_key}"
-                
-            # Show export options dialog
-            options = {}
-            
-            if format_key in ["srt", "vtt"]:
-                options = self._get_subtitle_options()
-                if options is None:
-                    return
-            elif format_key in ["json", "csv"]:
-                options = self._get_structured_options()
-                if options is None:
-                    return
-            
-            # Start tracking export operation
-            self.error_tracker.start_tracking(
+
+            # Register attempt with error tracker
+            self.error_tracker.register_attempt(
                 ExportOperation.TRANSCRIPT,
                 target_path=file_path
             )
-            
-            # Export in a separate thread to avoid UI freezing
-            def export_thread():
+
+            # Get transcript text
+            transcript = self.parent.transcript_view.toPlainText()
+
+            # Export in a separate thread
+            def export_thread() -> None:
                 try:
                     # Export transcript
                     self.export_manager.export_transcript(
-                        self.parent.segments,
-                        file_path,
-                        format_key,
-                        options
+                        transcript_text=transcript,
+                        output_path=file_path
                     )
-                    
+
                     # Mark as success
                     self.error_tracker.mark_success()
-                    
+
                     # Show success message
                     self.parent.show_message(
                         "Export Successful",
                         f"Transcript exported to {file_path}",
                         QMessageBox.Icon.Information
                     )
-                    
                 except Exception as e:
-                    # Mark as failed
-                    self.error_tracker.mark_failure(e)
-                    
-                    # Show error message
-                    ErrorHandler.handle_exception(e)
-            
-            # Start thread
-            thread = threading.Thread(target=export_thread)
-            thread.daemon = True
-            thread.start()
-            
+                    logger.error(f"Export failed: {str(e)}", exc_info=True)
+                    self.error_tracker.mark_failure(str(e))
+
+            # Start export thread
+            threading.Thread(target=export_thread).start()
+
         except Exception as e:
-            ErrorHandler.handle_exception(e)
-    
-    def export_audio_segment(self):
-        """Export an audio segment to a file."""
-        try:
-            # Check if we have audio data to export
-            if not self.parent.audio_processor or not self.parent.audio_processor.audio:
-                raise ExportError(
-                    "No audio data available to export",
-                    ErrorSeverity.WARNING,
-                    {"method": "export_audio_segment"}
-                )
-            
-            # Get export format
-            formats = list(self.export_manager.AUDIO_FORMATS.items())
-            format_names = [f"{key.upper()} - {desc}" for key, desc in formats]
-            
-            format_idx, ok = QInputDialog.getItem(
-                self.parent,
-                "Export Audio Segment",
-                "Select export format:",
-                format_names,
-                0,
-                False
+            logger.error(f"Error in export_transcript: {str(e)}", exc_info=True)
+            ErrorHandler.show_error(
+                f"Error exporting transcript: {str(e)}",
+                ErrorSeverity.ERROR,
+                self.parent
             )
-            
-            if not ok:
-                return
-                
-            format_key = formats[format_names.index(format_idx)][0]
-            
-            # Get file path
-            file_filter = f"{format_key.upper()} Files (*.{format_key})"
+
+    def export_transcript_time_segments(self) -> None:
+        """Export the transcript with time segments as a text file."""
+        try:
+            # Get export path
             file_path, _ = QFileDialog.getSaveFileName(
                 self.parent,
-                "Export Audio Segment",
-                str(Path.home()),
-                file_filter
+                "Export Transcript with Time Segments",
+                os.path.expanduser("~/Documents"),
+                "Text Files (*.txt);;All Files (*.*)"
             )
-            
+
             if not file_path:
                 return
-                
-            # Add extension if missing
-            if not file_path.lower().endswith(f".{format_key}"):
-                file_path += f".{format_key}"
-                
-            # Start tracking export operation
-            self.error_tracker.start_tracking(
-                ExportOperation.AUDIO_SEGMENT,
+
+            # Register attempt with error tracker
+            self.error_tracker.register_attempt(
+                ExportOperation.TRANSCRIPT_TIME_SEGMENTS,
                 target_path=file_path
             )
-            
-            # Export in a separate thread to avoid UI freezing
-            def export_thread():
+
+            # Get segments
+            segments = self.parent.segments
+
+            # Export in a separate thread
+            def export_thread() -> None:
                 try:
-                    # Export audio segment
-                    self.export_manager.export_audio(
-                        self.parent.audio_processor.audio,
-                        self.parent.audio_processor.sample_rate,
-                        file_path,
-                        format_key
+                    # Export transcript with time segments
+                    self.export_manager.export_transcript_time_segments(
+                        segments=segments,
+                        output_path=file_path
                     )
-                    
+
                     # Mark as success
                     self.error_tracker.mark_success()
-                    
+
                     # Show success message
                     self.parent.show_message(
                         "Export Successful",
-                        f"Audio segment exported to {file_path}",
+                        f"Transcript with time segments exported to {file_path}",
                         QMessageBox.Icon.Information
                     )
-                    
                 except Exception as e:
-                    # Mark as failed
-                    self.error_tracker.mark_failure(e)
-                    
-                    # Show error message
-                    ErrorHandler.handle_exception(e)
-            
-            # Start thread
-            thread = threading.Thread(target=export_thread)
-            thread.daemon = True
-            thread.start()
-            
+                    logger.error(f"Export failed: {str(e)}", exc_info=True)
+                    self.error_tracker.mark_failure(str(e))
+
+            # Start export thread
+            threading.Thread(target=export_thread).start()
+
         except Exception as e:
-            ErrorHandler.handle_exception(e)
-    
-    def export_speaker_audio(self):
+            logger.error(
+                f"Error in export_transcript_time_segments: {str(e)}",
+                exc_info=True
+            )
+            ErrorHandler.show_error(
+                f"Error exporting transcript: {str(e)}",
+                ErrorSeverity.ERROR,
+                self.parent
+            )
+
+    def export_speaker_audio(self) -> None:
         """Export audio segments for a specific speaker."""
         try:
-            # Check if we have segments and audio data
-            if not self.parent.segments or not self.parent.audio_processor:
+            # Get list of speakers
+            speaker_set = {
+                s.get("speaker", "Unknown") for s in self.parent.segments
+                if s.get("speaker") not in ["", None]
+            }
+            if not speaker_set:
                 raise ExportError(
-                    "No segments or audio data available to export",
+                    "No speaker segments found",
                     ErrorSeverity.WARNING,
                     {"method": "export_speaker_audio"}
                 )
-            
-            # Get list of unique speaker IDs
-            speakers = set()
-            for segment in self.parent.segments:
-                if "speaker" in segment and segment["speaker"]:
-                    speakers.add(segment["speaker"])
-            
-            if not speakers:
-                raise ExportError(
-                    "No speaker information available in segments",
-                    ErrorSeverity.WARNING,
-                    {"method": "export_speaker_audio"}
-                )
-            
-            # Get the speaker to export
-            speaker_list = sorted(list(speakers))
-            
+
+            # Convert to sorted list
+            speaker_list = sorted(list(speaker_set))
+
+            # Ask user to select a speaker
             speaker_idx, ok = QInputDialog.getItem(
                 self.parent,
-                "Export Speaker Audio",
-                "Select speaker:",
+                "Select Speaker",
+                "Export audio for speaker:",
                 [str(s) for s in speaker_list],
                 0,
                 False
             )
-            
+
             if not ok:
                 return
-                
-            selected_speaker = speaker_list[speaker_list.index(int(speaker_idx) if speaker_idx.isdigit() else speaker_idx)]
-            
+
+            # Get the selected speaker
+            selected_speaker = speaker_list[
+                speaker_list.index(
+                    int(speaker_idx) if speaker_idx.isdigit() else speaker_idx
+                )
+            ]
+
             # Get export format
-            formats = list(self.export_manager.AUDIO_FORMATS.items())
-            format_names = [f"{key.upper()} - {desc}" for key, desc in formats]
-            
+            formats = ["WAV", "MP3"]
             format_idx, ok = QInputDialog.getItem(
                 self.parent,
-                "Export Speaker Audio",
-                "Select export format:",
-                format_names,
+                "Select Format",
+                "Export format:",
+                formats,
                 0,
                 False
             )
-            
+
             if not ok:
                 return
-                
-            format_key = formats[format_names.index(format_idx)][0]
-            
+
             # Get export directory
             directory = QFileDialog.getExistingDirectory(
                 self.parent,
                 "Select Export Directory",
-                str(Path.home())
+                os.path.expanduser("~/Documents")
             )
-            
+
             if not directory:
                 return
-            
-            # Start tracking export operation
-            self.error_tracker.start_tracking(
+
+            # Register attempt with error tracker
+            self.error_tracker.register_attempt(
                 ExportOperation.SPEAKER_AUDIO,
                 target_path=directory
             )
-            
+
             # Filter segments for selected speaker
-            speaker_segments = [s for s in self.parent.segments if s.get("speaker") == selected_speaker]
-            
+            speaker_segments = [
+                s for s in self.parent.segments
+                if s.get("speaker") == selected_speaker
+            ]
+
             # Export in a separate thread
-            def export_thread():
+            def export_thread() -> None:
                 try:
-                    # Export each segment
+                    # Export speaker audio segments
                     exported_files = []
-                    
+                    export_format = formats[formats.index(format_idx)].lower()
+
                     for i, segment in enumerate(speaker_segments):
-                        # Generate file name
-                        file_name = f"speaker_{selected_speaker}_segment_{i+1:03d}.{format_key}"
-                        file_path = os.path.join(directory, file_name)
-                        
-                        # Export segment
-                        self.export_manager.export_segment(
-                            self.parent.audio_processor.audio,
-                            self.parent.audio_processor.sample_rate,
-                            segment["start"],
-                            segment["end"],
-                            file_path,
-                            format_key
+                        # Export segment audio
+                        file_path = self.export_manager.export_segment_audio(
+                            audio_path=self.parent.audio_path,
+                            start_time=segment["start"],
+                            end_time=segment["end"],
+                            output_dir=directory,
+                            filename=f"speaker_{selected_speaker}_{i+1:03d}",
+                            export_format=export_format
                         )
-                        
                         exported_files.append(file_path)
-                    
+
                     # Mark as success
                     self.error_tracker.mark_success()
-                    
+
                     # Show success message
                     self.parent.show_message(
                         "Export Successful",
-                        f"Exported {len(exported_files)} audio segments for speaker {selected_speaker}",
+                        f"Exported {len(exported_files)} audio segments for "
+                        f"speaker {selected_speaker}",
                         QMessageBox.Icon.Information
                     )
-                    
                 except Exception as e:
-                    # Mark as failed
-                    self.error_tracker.mark_failure(e)
-                    
-                    # Show error message
-                    ErrorHandler.handle_exception(e)
-            
-            # Start thread
-            thread = threading.Thread(target=export_thread)
-            thread.daemon = True
-            thread.start()
-            
+                    logger.error(f"Export failed: {str(e)}", exc_info=True)
+                    self.error_tracker.mark_failure(str(e))
+
+            # Start export thread
+            threading.Thread(target=export_thread).start()
+
         except Exception as e:
-            ErrorHandler.handle_exception(e)
-    
-    def export_selection(self):
+            logger.error(f"Error in export_speaker_audio: {str(e)}", exc_info=True)
+            ErrorHandler.show_error(
+                f"Error exporting speaker audio: {str(e)}",
+                ErrorSeverity.ERROR,
+                self.parent
+            )
+
+    def export_selection(self) -> None:
         """Export the current selection as audio and/or transcript."""
         try:
             # Check if we have a selection
-            if (self.parent.waveform_view.selection_start is None or 
-                self.parent.waveform_view.selection_end is None):
+            if (self.parent.waveform_view.selection_start is None or
+                    self.parent.waveform_view.selection_end is None):
                 raise ExportError(
                     "No selection to export",
                     ErrorSeverity.WARNING,
                     {"method": "export_selection"}
                 )
-            
+
             # Get selection bounds
-            start = min(self.parent.waveform_view.selection_start, self.parent.waveform_view.selection_end)
-            end = max(self.parent.waveform_view.selection_start, self.parent.waveform_view.selection_end)
-            
-            # Create dialog to ask what to export
+            start = self.parent.waveform_view.selection_start
+            end = self.parent.waveform_view.selection_end
+
+            # Create dialog to select export options
             dialog = QDialog(self.parent)
             dialog.setWindowTitle("Export Selection")
             layout = QVBoxLayout(dialog)
-            
-            layout.addWidget(QLabel(f"Export selection from {start:.2f}s to {end:.2f}s:"))
-            
+
+            layout.addWidget(
+                QLabel(f"Export selection from {start:.2f}s to {end:.2f}s:")
+            )
+
             # Checkboxes for what to export
             audio_checkbox = QCheckBox("Export audio")
             audio_checkbox.setChecked(True)
             layout.addWidget(audio_checkbox)
-            
-            transcript_checkbox = QCheckBox("Export transcript")
+
+            transcript_checkbox = QCheckBox("Export transcript for this selection")
             transcript_checkbox.setChecked(True)
             layout.addWidget(transcript_checkbox)
-            
-            # Buttons
-            button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+
+            # Get available formats
+            formats = ["WAV", "MP3"]
+            format_idx = 0  # Default to WAV
+
+            # Add dialog buttons
+            button_box = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok |
+                QDialogButtonBox.StandardButton.Cancel
+            )
             button_box.accepted.connect(dialog.accept)
             button_box.rejected.connect(dialog.reject)
             layout.addWidget(button_box)
-            
+
+            # Show dialog
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
-            
-            # Get options
+
+            # Get export options
             export_audio = audio_checkbox.isChecked()
             export_transcript = transcript_checkbox.isChecked()
-            
+
+            # At least one option must be selected
             if not export_audio and not export_transcript:
+                self.parent.show_message(
+                    "Export Error",
+                    "Please select at least one export option",
+                    QMessageBox.Icon.Warning
+                )
                 return
-            
-            # Get directory for export
+
+            # Get export directory
             directory = QFileDialog.getExistingDirectory(
                 self.parent,
                 "Select Export Directory",
-                str(Path.home())
+                os.path.expanduser("~/Documents")
             )
-            
+
             if not directory:
                 return
-            
-            # Generate base filename
-            base_name = f"selection_{start:.2f}s-{end:.2f}s"
-            
-            # Start tracking export operation
-            self.error_tracker.start_tracking(
+
+            # Register attempt with error tracker
+            self.error_tracker.register_attempt(
                 ExportOperation.SELECTION,
                 target_path=directory
             )
-            
-            def export_thread():
+
+            # Export in a separate thread
+            def export_thread() -> None:
                 try:
-                    results = []
-                    
-                    # Export audio if requested
+                    export_format = formats[format_idx].lower()
+                    timestamp = self.export_manager.get_timestamp()
+                    exported_files = []
+
+                    # Export audio if selected
                     if export_audio:
-                        # Get format
-                        format_key = "wav"  # Default format
-                        file_path = os.path.join(directory, f"{base_name}.{format_key}")
-                        
-                        # Export audio segment
-                        self.export_manager.export_segment(
-                            self.parent.audio_processor.audio,
-                            self.parent.audio_processor.sample_rate,
-                            start,
-                            end,
-                            file_path,
-                            format_key
+                        filename = f"selection_{start:.2f}_{end:.2f}_{timestamp}"
+                        audio_path = self.export_manager.export_segment_audio(
+                            audio_path=self.parent.audio_path,
+                            start_time=start,
+                            end_time=end,
+                            output_dir=directory,
+                            filename=filename,
+                            export_format=export_format
                         )
-                        
-                        results.append(f"Audio: {file_path}")
-                    
-                    # Export transcript if requested
+                        exported_files.append(audio_path)
+
+                    # Export transcript if selected
                     if export_transcript:
-                        # Filter segments that overlap with selection
-                        selected_segments = []
-                        
-                        for segment in self.parent.segments:
-                            seg_start = segment.get("start", 0)
-                            seg_end = segment.get("end", 0)
-                            
-                            # Check for overlap
-                            if (seg_start <= end and seg_end >= start):
-                                # Adjust segment boundaries to selection if needed
-                                selected_segment = segment.copy()
-                                
-                                if seg_start < start:
-                                    selected_segment["start"] = start
-                                
-                                if seg_end > end:
-                                    selected_segment["end"] = end
-                                
-                                selected_segments.append(selected_segment)
-                        
+                        # Find segments in the selection
+                        selected_segments = [
+                            s for s in self.parent.segments
+                            if s.get("start") >= start and s.get("end") <= end
+                        ]
+
+                        # Export transcript segments
                         if selected_segments:
-                            # Get format
-                            format_key = "txt"  # Default format
-                            file_path = os.path.join(directory, f"{base_name}.{format_key}")
-                            
-                            # Export transcript segments
-                            self.export_manager.export_transcript(
-                                selected_segments,
-                                file_path,
-                                format_key
+                            transcript_path = os.path.join(
+                                directory,
+                                f"selection_{start:.2f}_{end:.2f}_{timestamp}.txt"
                             )
-                            
-                            results.append(f"Transcript: {file_path}")
-                    
+                            self.export_manager.export_transcript_time_segments(
+                                segments=selected_segments,
+                                output_path=transcript_path
+                            )
+                            exported_files.append(transcript_path)
+                        else:
+                            logger.warning(
+                                "No transcript segments found in the selection"
+                            )
+
                     # Mark as success
                     self.error_tracker.mark_success()
-                    
+
                     # Show success message
                     self.parent.show_message(
                         "Export Successful",
-                        "Exported:\n" + "\n".join(results),
+                        f"Exported {len(exported_files)} files to {directory}",
                         QMessageBox.Icon.Information
                     )
-                    
                 except Exception as e:
-                    # Mark as failed
-                    self.error_tracker.mark_failure(e)
-                    
-                    # Show error message
-                    ErrorHandler.handle_exception(e)
-            
-            # Start thread
-            thread = threading.Thread(target=export_thread)
-            thread.daemon = True
-            thread.start()
-            
+                    logger.error(f"Export failed: {str(e)}", exc_info=True)
+                    self.error_tracker.mark_failure(str(e))
+
+            # Start export thread
+            threading.Thread(target=export_thread).start()
+
         except Exception as e:
-            ErrorHandler.handle_exception(e)
-    
-    def _get_subtitle_options(self) -> Dict[str, Any]:
-        """Get options for subtitle export formats.
-        
-        Returns:
-            Dict[str, Any]: Options for subtitle export
-        """
-        dialog = QDialog(self.parent)
-        dialog.setWindowTitle("Subtitle Export Options")
-        layout = QVBoxLayout(dialog)
-        
-        layout.addWidget(QLabel("Subtitle Options:"))
-        
-        include_speaker_checkbox = QCheckBox("Include speaker information")
-        include_speaker_checkbox.setChecked(True)
-        layout.addWidget(include_speaker_checkbox)
-        
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-        
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return None
-        
-        return {
-            "include_speaker": include_speaker_checkbox.isChecked()
-        }
-    
-    def _get_structured_options(self) -> Dict[str, Any]:
-        """Get options for structured format export.
-        
-        Returns:
-            Dict[str, Any]: Options for structured format export
-        """
-        dialog = QDialog(self.parent)
-        dialog.setWindowTitle("Export Options")
-        layout = QVBoxLayout(dialog)
-        
-        layout.addWidget(QLabel("Include fields:"))
-        
-        include_speaker_checkbox = QCheckBox("Speaker information")
-        include_speaker_checkbox.setChecked(True)
-        layout.addWidget(include_speaker_checkbox)
-        
-        include_timestamps_checkbox = QCheckBox("Timestamps")
-        include_timestamps_checkbox.setChecked(True)
-        layout.addWidget(include_timestamps_checkbox)
-        
-        include_words_checkbox = QCheckBox("Word-level details")
-        include_words_checkbox.setChecked(False)
-        layout.addWidget(include_words_checkbox)
-        
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-        
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return None
-        
-        return {
-            "include_speaker": include_speaker_checkbox.isChecked(),
-            "include_timestamps": include_timestamps_checkbox.isChecked(),
-            "include_words": include_words_checkbox.isChecked()
-        }
-    
-    @pyqtSlot(object, str, str)
-    def _on_export_failed(self, operation: ExportOperation, error_message: str, target_path: str):
-        """Handle export failure signal.
-        
+            logger.error(f"Error in export_selection: {str(e)}", exc_info=True)
+            ErrorHandler.show_error(
+                f"Error exporting selection: {str(e)}",
+                ErrorSeverity.ERROR,
+                self.parent
+            )
+
+    @pyqtSlot(ExportAttempt)
+    def _on_export_failed(self, attempt: ExportAttempt) -> None:
+        """Handle export failure.
+
         Args:
-            operation: Export operation type
-            error_message: Error message
-            target_path: Target path for the export
+            attempt: The failed export attempt
         """
-        # Log the failure
-        logger.error(f"Export failed: {operation.value} to {target_path}: {error_message}")
-        
-        # Check if we have multiple failures
-        failures = self.error_tracker.get_recent_failures()
-        
-        if len(failures) >= 3:
-            # Show error dialog with retry options
-            self.error_dialog.set_failures(failures)
+        # Add the failure to the error dialog
+        self.error_dialog.add_failure(attempt)
+
+        # Show the error dialog if not already visible
+        if not self.error_dialog.isVisible():
             self.error_dialog.exec()
-    
-    @pyqtSlot(list)
-    def _on_retry_exports(self, failures: List[ExportAttempt]):
-        """Handle retry exports request.
-        
+
+    @pyqtSlot()
+    def _on_retry_exports(self) -> None:
+        """Retry all failed exports."""
+        # Get failed attempts
+        failed_attempts = self.error_tracker.get_failed_attempts()
+
+        # Retry each attempt based on operation type
+        for attempt in failed_attempts:
+            self._retry_attempt(attempt)
+
+    def _retry_attempt(self, attempt: ExportAttempt) -> None:
+        """Retry a specific export attempt.
+
         Args:
-            failures: List of failed export attempts to retry
+            attempt: The export attempt to retry
         """
-        logger.info(f"Retrying {len(failures)} failed exports")
-        
-        # Group failures by operation type
-        by_operation = {}
-        for failure in failures:
-            if failure.operation not in by_operation:
-                by_operation[failure.operation] = []
-            by_operation[failure.operation].append(failure)
-        
-        # Process each operation type
-        for operation, op_failures in by_operation.items():
-            if operation == ExportOperation.TRANSCRIPT:
-                # Find the newest transcript failure and retry it
-                newest = max(op_failures, key=lambda f: f.start_time)
-                
-                # Reset the current attempt
-                self.error_tracker.current_attempt = newest
-                
-                # Call export transcript with the same path
-                def retry_func():
-                    self.export_transcript()
-                
-                self.error_tracker.attempt_retry(retry_func)
-                
-            elif operation == ExportOperation.AUDIO_SEGMENT:
-                # Find the newest audio segment failure and retry it
-                newest = max(op_failures, key=lambda f: f.start_time)
-                
-                # Reset the current attempt
-                self.error_tracker.current_attempt = newest
-                
-                # Call export audio segment with the same path
-                def retry_func():
-                    self.export_audio_segment()
-                
-                self.error_tracker.attempt_retry(retry_func)
-                
-            elif operation == ExportOperation.SPEAKER_AUDIO:
-                # Find the newest speaker audio failure and retry it
-                newest = max(op_failures, key=lambda f: f.start_time)
-                
-                # Reset the current attempt
-                self.error_tracker.current_attempt = newest
-                
-                # Call export speaker audio with the same path
-                def retry_func():
-                    self.export_speaker_audio()
-                
-                self.error_tracker.attempt_retry(retry_func)
-                
-            elif operation == ExportOperation.SELECTION:
-                # Find the newest selection failure and retry it
-                newest = max(op_failures, key=lambda f: f.start_time)
-                
-                # Reset the current attempt
-                self.error_tracker.current_attempt = newest
-                
-                # Call export selection with the same path
-                def retry_func():
-                    self.export_selection()
-                
-                self.error_tracker.attempt_retry(retry_func) 
+        # Map operations to retry methods
+        retry_methods = {
+            ExportOperation.TRANSCRIPT: self._retry_transcript_export,
+            ExportOperation.TRANSCRIPT_TIME_SEGMENTS: self._retry_transcript_time_export,
+            ExportOperation.SPEAKER_AUDIO: self._retry_speaker_audio_export,
+            ExportOperation.SELECTION: self._retry_selection_export
+        }
+
+        # Call appropriate retry method
+        if attempt.operation in retry_methods:
+            retry_methods[attempt.operation](attempt)
+        else:
+            logger.error(f"Unknown operation type: {attempt.operation}")
+
+    def _get_parent(self) -> QObject:
+        """Get the parent window.
+
+        Returns:
+            The parent window
+        """
+        return self.parent
+
+    def _show_export_dialog(self, parent: Optional[QObject] = None) -> Dict[str, Any]:
+        """Show a dialog for export options.
+
+        Args:
+            parent: Parent widget
+
+        Returns:
+            Dictionary of export options
+        """
+        # Create dialog
+        dialog = QDialog(parent if parent is not None else self._get_parent())
+        dialog.setWindowTitle("Export Options")
+
+        # Add options
+        layout = QVBoxLayout(dialog)
+
+        # Add buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        # Show dialog
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return {}
+
+        return {}
+
+    def _show_export_format_dialog(
+            self, parent: Optional[QObject] = None
+    ) -> Dict[str, Any]:
+        """Show a dialog for selecting export format.
+
+        Args:
+            parent: Parent widget
+
+        Returns:
+            Dictionary of export format options
+        """
+        # Create dialog
+        dialog = QDialog(parent if parent is not None else self._get_parent())
+        dialog.setWindowTitle("Export Format")
+
+        # Add options
+        layout = QVBoxLayout(dialog)
+
+        # Add buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        # Show dialog
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return {}
+
+        return {}
+
+    def export_audio(self) -> None:
+        """Export the entire audio file."""
+        try:
+            # Get export path
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.parent,
+                "Export Audio",
+                os.path.expanduser("~/Documents"),
+                "Audio Files (*.wav *.mp3);;All Files (*.*)"
+            )
+
+            if not file_path:
+                return
+
+            # Get file extension
+            _, ext = os.path.splitext(file_path)
+            if not ext:
+                file_path += ".wav"
+                ext = ".wav"
+
+            # Map extension to format
+            format_map = {
+                ".wav": "wav",
+                ".mp3": "mp3"
+            }
+            export_format = format_map.get(ext.lower(), "wav")
+
+            # Register attempt with error tracker
+            self.error_tracker.register_attempt(
+                ExportOperation.AUDIO,
+                target_path=file_path
+            )
+
+            # Export in a separate thread
+            def export_thread() -> None:
+                try:
+                    # Export audio
+                    self.export_manager.export_audio(
+                        audio_path=self.parent.audio_path,
+                        output_path=file_path,
+                        export_format=export_format
+                    )
+
+                    # Mark as success
+                    self.error_tracker.mark_success()
+
+                    # Show success message
+                    self.parent.show_message(
+                        "Export Successful",
+                        f"Audio exported to {file_path}",
+                        QMessageBox.Icon.Information
+                    )
+                except Exception as e:
+                    logger.error(f"Export failed: {str(e)}", exc_info=True)
+                    self.error_tracker.mark_failure(str(e))
+
+            # Start export thread
+            threading.Thread(target=export_thread).start()
+
+        except Exception as e:
+            logger.error(f"Error in export_audio: {str(e)}", exc_info=True)
+            ErrorHandler.show_error(
+                f"Error exporting audio: {str(e)}",
+                ErrorSeverity.ERROR,
+                self.parent
+            )
+
+    def _retry_transcript_export(self, attempt: ExportAttempt) -> None:
+        """Retry a failed transcript export.
+
+        Args:
+            attempt: The failed export attempt
+        """
+        def retry_func() -> None:
+            self.export_transcript()
+
+        self._schedule_retry(retry_func)
+
+    def _retry_transcript_time_export(self, attempt: ExportAttempt) -> None:
+        """Retry a failed transcript with time segments export.
+
+        Args:
+            attempt: The failed export attempt
+        """
+        def retry_func() -> None:
+            self.export_transcript_time_segments()
+
+        self._schedule_retry(retry_func)
+
+    def _retry_speaker_audio_export(self, attempt: ExportAttempt) -> None:
+        """Retry a failed speaker audio export.
+
+        Args:
+            attempt: The failed export attempt
+        """
+        def retry_func() -> None:
+            self.export_speaker_audio()
+
+        self._schedule_retry(retry_func)
+
+    def _retry_selection_export(self, attempt: ExportAttempt) -> None:
+        """Retry a failed selection export.
+
+        Args:
+            attempt: The failed export attempt
+        """
+        def retry_func() -> None:
+            self.export_selection()
+
+        self._schedule_retry(retry_func)
+
+    def _schedule_retry(self, retry_func: Callable[[], None]) -> None:
+        """Schedule a retry function to be executed.
+
+        Args:
+            retry_func: The function to retry the export
+        """
+        # Execute the retry function
+        retry_func()

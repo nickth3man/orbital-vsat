@@ -7,10 +7,10 @@ This module provides file loading and processing functionality.
 import logging
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtWidgets import QFileDialog, QProgressDialog
+from PyQt6.QtCore import Qt
 
 from src.audio.file_handler import AudioFileHandler
 from src.ui.processing_worker import ProcessingWorker

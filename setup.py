@@ -24,7 +24,8 @@ setup(
     ],
     python_requires=">=3.10",
     install_requires=[
-        line.strip() for line in open("requirements.txt") if not line.startswith("#")
+        line.strip() for line in open("requirements.txt")
+        if not line.startswith("#")
     ],
     extras_require={
         "dev": [
@@ -35,4 +36,4 @@ setup(
             "isort",
         ],
     },
-) 
+)

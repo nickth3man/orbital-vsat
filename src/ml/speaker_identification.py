@@ -23,7 +23,7 @@ from ..database.models import Speaker
 
 # Import audio file handler
 from ..audio.file_handler import AudioFileHandler
-from ..ml.voice_print_processor import VoicePrintProcessor
+from src.ml.voice_print_processor import VoicePrintProcessor
 from ..ml.error_handling import (
     SpeakerIdentificationError, ModelLoadError, ResourceExhaustionError
 )
